@@ -19,7 +19,7 @@ interface RewardsProps {
   onAddReward: (reward: Omit<Reward, 'id' | 'createdAt'>) => void;
   onEditReward: (rewardId: string, updates: Partial<Reward>) => void;
   onDeleteReward: (rewardId: string) => void;
-  onRedeem: (reward: Reward) => boolean;
+  onRedeem: (reward: Reward) => boolean | Promise<boolean>;
 }
 
 export const Rewards = ({
@@ -78,9 +78,9 @@ export const Rewards = ({
     setShowAddDialog(true);
   };
 
-  const handleRedeem = () => {
+  const handleRedeem = async () => {
     if (showRedeemConfirm) {
-      const success = onRedeem(showRedeemConfirm);
+      const success = await onRedeem(showRedeemConfirm);
       if (success) {
         setShowRedeemConfirm(null);
       }

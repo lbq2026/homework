@@ -236,6 +236,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 监听 auth.users 插入事件
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -263,3 +264,25 @@ COMMENT ON TABLE public.daily_records IS '每日作业完成记录';
 COMMENT ON TABLE public.rewards IS '奖品库，每个用户有自己的奖品设置';
 COMMENT ON TABLE public.redemptions IS '奖品兑换记录';
 COMMENT ON TABLE public.badges IS '用户解锁的徽章记录';
+
+-- ============================================
+-- 11. 创建兑换奖品的存储过程
+-- ============================================
+CREATE OR REPLACE FUNCTION redeem_reward(
+  p_user_id UUID,
+  p_reward_id UUID,
+  p_reward_name TEXT,
+  p_points INTEGER
+)
+RETURNS VOID AS $$
+BEGIN
+  -- 插入兑换记录
+  INSERT INTO public.redemptions (user_id, reward_id, reward_name, points)
+  VALUES (p_user_id, p_reward_id, p_reward_name, p_points);
+  
+  -- 更新用户总积分
+  UPDATE public.profiles
+  SET total_points = total_points - p_points
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

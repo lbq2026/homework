@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Home, ClipboardList, Gift, Trophy, User } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth.tsx';
+import type { Task, DailyTask, DailyRecord, Reward } from '@/types';
 import { Auth } from '@/views/Auth';
 import { Profile } from '@/views/Profile';
 import { Home as HomeView } from '@/views/Home';
@@ -12,7 +13,7 @@ import { Settings } from '@/views/Settings';
 import { BadgeUnlockModal } from '@/components/BadgeUnlockModal';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { useAppState } from '@/hooks/useAppState';
+import { useSyncedAppState } from '@/hooks/useSyncedAppState';
 // import { isSupabaseConfigured } from '@/lib/supabase';
 
 type ViewType = 'home' | 'tasks' | 'rewards' | 'achievements' | 'settings' | 'profile';
@@ -22,14 +23,14 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<ViewType>('home');
   const { user, loading, isConfigured } = useAuth();
   
-  // 本地状态管理
-  const localState = useAppState();
+  // 同步状态管理（本地 + Supabase 云端）
+  const localState = useSyncedAppState();
   
   // 统计数据
   const stats = localState.getStats();
 
   // 如果正在加载，显示加载状态
-  if (loading) {
+  if (loading || localState.isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-orange-50">
         <motion.div
@@ -37,6 +38,9 @@ function AppContent() {
           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
           className="w-12 h-12 border-4 border-blue-200 border-t-blue-500 rounded-full"
         />
+        {localState.isSyncing && (
+          <div className="absolute mt-20 text-sm text-gray-500">同步数据中...</div>
+        )}
       </div>
     );
   }
@@ -46,8 +50,8 @@ function AppContent() {
     return <Auth onLoginSuccess={() => setCurrentView('home')} />;
   }
 
-  const handleRedeem = (reward: any) => {
-    const success = localState.redeemReward(reward);
+  const handleRedeem = async (reward: Reward) => {
+    const success = await localState.redeemReward(reward);
     if (success) {
       toast.success(`成功兑换: ${reward.name}`, {
         description: `消耗 ${reward.points} 积分`,
@@ -60,9 +64,9 @@ function AppContent() {
   const handleToggleTask = (taskId: string) => {
     localState.toggleTaskCompletion(taskId);
     const today = new Date().toISOString().split('T')[0];
-    const todayRecord = localState.state.dailyRecords.find((r: any) => r.date === today);
-    const task = todayRecord?.tasks.find((t: any) => t.taskId === taskId);
-    const taskDef = localState.state.tasks.find((t: any) => t.id === taskId);
+    const todayRecord = localState.state.dailyRecords.find((r: DailyRecord) => r.date === today);
+    const task = todayRecord?.tasks.find((t: DailyTask) => t.taskId === taskId);
+    const taskDef = localState.state.tasks.find((t: Task) => t.id === taskId);
     
     if (task && !task.completed && taskDef) {
       toast.success(`完成任务!`, {
@@ -146,7 +150,7 @@ function AppContent() {
           />
         );
       case 'profile':
-        return <Profile onBack={() => setCurrentView('home')} />;
+        return <Profile onBack={() => setCurrentView('home')} onRefresh={localState.refreshData} isSyncing={localState.isSyncing} />;
       default:
         return null;
     }

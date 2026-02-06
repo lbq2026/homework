@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, RefreshCw, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth.tsx';
@@ -8,9 +8,11 @@ import { useProfile } from '@/hooks/useSupabaseData';
 
 interface ProfileProps {
   onBack: () => void;
+  onRefresh?: () => Promise<void>;
+  isSyncing?: boolean;
 }
 
-export const Profile = ({ onBack }: ProfileProps) => {
+export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
   const { user, signOut } = useAuth();
   const { profile } = useProfile();
   const [isEditing, setIsEditing] = useState(false);
@@ -26,6 +28,12 @@ export const Profile = ({ onBack }: ProfileProps) => {
 
   const handleLogout = async () => {
     await signOut();
+  };
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      await onRefresh();
+    }
   };
 
   const getRoleLabel = (role?: string) => {
@@ -166,11 +174,48 @@ export const Profile = ({ onBack }: ProfileProps) => {
           </div>
         </motion.div>
 
-        {/* 退出登录 */}
+        {/* 数据同步 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
+          className="bg-white rounded-2xl p-4 shadow-md"
+        >
+          <h3 className="font-bold text-gray-800 mb-4">数据同步</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-gray-500">同步状态</span>
+              <span className={`flex items-center gap-1 ${isSyncing ? 'text-blue-600' : 'text-green-600'}`}>
+                {isSyncing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">同步中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4 h-4" />
+                    <span className="text-sm">已同步</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <Button
+              onClick={handleRefresh}
+              disabled={isSyncing}
+              variant="outline"
+              className="w-full h-12 text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              <RefreshCw className={`w-5 h-5 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? '同步中...' : '立即同步'}
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* 退出登录 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
         >
           <Button
             onClick={handleLogout}
