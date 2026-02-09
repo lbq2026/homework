@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { AppState, Task, Reward, Redemption, BadgeType, DailyTask } from '@/types';
+import type { AppState, Task, Reward, Redemption, BadgeType, DailyTask, PointAdjustment } from '@/types';
 import {
   loadState,
   saveState,
@@ -12,12 +12,25 @@ import {
   calculateStreak,
   getCategoryStats,
   getTotalCompletedTasks,
+  calculateTotalPoints,
 } from '@/utils/storage';
 import { playSuccessSound, playPointSound, playBadgeSound, playRedeemSound } from '@/utils/sound';
 
 export const useAppState = () => {
   const [state, setState] = useState<AppState>(loadState());
   const [newlyUnlockedBadges, setNewlyUnlockedBadges] = useState<BadgeType[]>([]);
+
+  // 自动计算总积分（当相关数据变化时）
+  useEffect(() => {
+    setState(prev => {
+      const calculatedPoints = calculateTotalPoints(prev);
+      // 只有当计算值与当前值不同时才更新，避免无限循环
+      if (calculatedPoints !== prev.totalPoints) {
+        return { ...prev, totalPoints: calculatedPoints };
+      }
+      return prev;
+    });
+  }, [state.dailyRecords, state.pointAdjustments, state.redemptions]);
 
   // 保存状态到本地存储
   useEffect(() => {
@@ -121,15 +134,10 @@ export const useAppState = () => {
           : record.totalPoints - points,
       };
       
-      const newTotalPoints = newCompleted 
-        ? prev.totalPoints + points 
-        : prev.totalPoints - points;
-      
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       const newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
-        totalPoints: newTotalPoints,
       };
       
       // 播放音效
@@ -181,13 +189,10 @@ export const useAppState = () => {
         totalPoints: record.totalPoints + additionalPoints,
       };
       
-      const newTotalPoints = prev.totalPoints + additionalPoints;
-      
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       const newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
-        totalPoints: newTotalPoints,
       };
       
       playSuccessSound(prev.settings.soundEnabled);
@@ -251,7 +256,6 @@ export const useAppState = () => {
       const newState = {
         ...prev,
         redemptions: [redemption, ...prev.redemptions],
-        totalPoints: prev.totalPoints - reward.points,
       };
       
       playRedeemSound(prev.settings.soundEnabled);
@@ -301,6 +305,41 @@ export const useAppState = () => {
   // 重置所有数据
   const resetAll = useCallback(() => {
     setState(resetAllData());
+  }, []);
+
+  // 手动调整积分（加分或扣分）
+  const adjustPoints = useCallback((points: number, reason: string) => {
+    const adjustment: PointAdjustment = {
+      id: Date.now().toString(),
+      points,
+      reason,
+      createdAt: Date.now(),
+    };
+    
+    setState(prev => {
+      const newState = {
+        ...prev,
+        pointAdjustments: [adjustment, ...prev.pointAdjustments],
+      };
+      
+      // 播放音效
+      if (points > 0) {
+        playPointSound(newState.settings.soundEnabled);
+      }
+      
+      // 检查徽章解锁（加分时）
+      if (points > 0) {
+        const newlyUnlocked = checkAndUnlockBadges(newState);
+        if (newlyUnlocked.length > 0) {
+          setNewlyUnlockedBadges(prev => [...prev, ...newlyUnlocked]);
+          playBadgeSound(newState.settings.soundEnabled);
+        }
+      }
+      
+      return newState;
+    });
+    
+    return true;
   }, []);
 
   // 重置今日记录
@@ -355,5 +394,6 @@ export const useAppState = () => {
     clearNewlyUnlockedBadges,
     getTodayRecord,
     getStats,
+    adjustPoints,
   };
 };

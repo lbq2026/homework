@@ -13,6 +13,7 @@ import {
   calculateStreak,
   getCategoryStats,
   getTotalCompletedTasks,
+  calculateTotalPoints,
 } from '@/utils/storage';
 import { playSuccessSound, playPointSound, playBadgeSound, playRedeemSound } from '@/utils/sound';
 
@@ -239,7 +240,7 @@ export const useSyncedAppState = () => {
           
           if (isNewDeviceOrUserSwitch) {
             // 新设备或用户切换：使用服务器数据，但保留本地设置
-            setState({
+            const newState = {
               ...getInitialState(),
               ...serverData,
               settings: {
@@ -247,25 +248,35 @@ export const useSyncedAppState = () => {
                 // 保留音效设置，但更新其他设置
                 soundEnabled: localData.settings?.soundEnabled ?? true,
               },
-            });
+            };
+            // 重新计算总积分
+            newState.totalPoints = calculateTotalPoints(newState);
+            setState(newState);
           } else {
             // 同一用户：合并本地和服务器数据（服务器数据优先）
-            setState({
+            const newState = {
               ...getInitialState(),
               ...localData,
               ...serverData,
               // 徽章需要特殊处理，合并解锁状态
               badges: mergeBadges(localData.badges, serverData.badges as unknown as { badge_type: string; unlocked_at: string }[]),
               settings: localData.settings, // 设置保留本地
-            });
+            };
+            // 重新计算总积分
+            newState.totalPoints = calculateTotalPoints(newState);
+            setState(newState);
           }
         } else {
-          // 服务器数据加载失败，使用本地数据
-          setState(loadState());
+          // 服务器数据加载失败，使用本地数据并重新计算积分
+          const localData = loadState();
+          localData.totalPoints = calculateTotalPoints(localData);
+          setState(localData);
         }
       } else {
-        // 未登录，使用本地数据
-        setState(loadState());
+        // 未登录，使用本地数据并重新计算积分
+        const localData = loadState();
+        localData.totalPoints = calculateTotalPoints(localData);
+        setState(localData);
       }
       
       setIsLoading(false);
@@ -273,6 +284,20 @@ export const useSyncedAppState = () => {
 
     initializeData();
   }, [user?.id, isOnline, loadUserDataFromSupabase]); // 使用 user.id 作为依赖
+
+  // 自动计算总积分（当相关数据变化时）
+  useEffect(() => {
+    if (!isLoading) {
+      setState(prev => {
+        const calculatedPoints = calculateTotalPoints(prev);
+        // 只有当计算值与当前值不同时才更新，避免无限循环
+        if (calculatedPoints !== prev.totalPoints) {
+          return { ...prev, totalPoints: calculatedPoints };
+        }
+        return prev;
+      });
+    }
+  }, [state.dailyRecords, state.pointAdjustments, state.redemptions, isLoading]);
 
   // 保存状态到本地存储
   useEffect(() => {
@@ -428,15 +453,10 @@ export const useSyncedAppState = () => {
           : record.totalPoints - points,
       };
       
-      const newTotalPoints = newCompleted 
-        ? prev.totalPoints + points 
-        : prev.totalPoints - points;
-      
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
-        totalPoints: newTotalPoints,
       };
       
       // 播放音效
@@ -503,13 +523,10 @@ export const useSyncedAppState = () => {
         totalPoints: record.totalPoints + additionalPoints,
       };
       
-      const newTotalPoints = prev.totalPoints + additionalPoints;
-      
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
-        totalPoints: newTotalPoints,
       };
       
       playSuccessSound(prev.settings.soundEnabled);
@@ -630,7 +647,6 @@ export const useSyncedAppState = () => {
       const newState = {
         ...prev,
         redemptions: [redemption, ...prev.redemptions],
-        totalPoints: prev.totalPoints - reward.points,
       };
       
       playRedeemSound(prev.settings.soundEnabled);
@@ -728,7 +744,6 @@ export const useSyncedAppState = () => {
       newState = {
         ...prev,
         pointAdjustments: [adjustment, ...prev.pointAdjustments],
-        totalPoints: prev.totalPoints + points,
       };
       
       // 播放音效

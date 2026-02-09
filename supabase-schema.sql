@@ -26,23 +26,36 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 -- RLS 策略
+
+-- 创建辅助函数：检查当前用户是否是指定用户的家长
+-- 使用 SECURITY DEFINER 避免 RLS 递归
+CREATE OR REPLACE FUNCTION public.is_parent_of(child_id UUID)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_parent_id UUID;
+BEGIN
+    SELECT parent_id INTO v_parent_id
+    FROM public.profiles
+    WHERE id = child_id;
+    
+    RETURN v_parent_id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 查看策略：用户可以查看自己的资料，或者家长查看孩子的资料
 CREATE POLICY "Users can view own profile" 
     ON public.profiles FOR SELECT 
-    USING (auth.uid() = id OR auth.uid() = parent_id);
+    USING (auth.uid() = id OR public.is_parent_of(id));
 
+-- 更新策略：用户只能更新自己的资料
 CREATE POLICY "Users can update own profile" 
     ON public.profiles FOR UPDATE 
     USING (auth.uid() = id);
 
+-- 插入策略：用户只能插入自己的资料
 CREATE POLICY "Users can insert own profile"
     ON public.profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
-
-CREATE POLICY "Parents can view children's profiles"
-    ON public.profiles FOR SELECT
-    USING (auth.uid() IN (
-        SELECT parent_id FROM public.profiles WHERE id = auth.uid()
-    ));
 
 -- ============================================
 -- 2. 作业任务表 (tasks)

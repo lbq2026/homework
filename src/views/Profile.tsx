@@ -13,13 +13,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 
 interface ProfileProps {
+  totalPoints?: number;
   onBack: () => void;
   onRefresh?: () => Promise<void>;
   isSyncing?: boolean;
   onManagePoints?: () => void;
 }
 
-export const Profile = ({ onBack, onRefresh, isSyncing, onManagePoints }: ProfileProps) => {
+export const Profile = ({ totalPoints, onBack, onRefresh, isSyncing, onManagePoints }: ProfileProps) => {
   const { user, signOut, updateProfile, updateEmail, updatePhone, updatePassword } = useAuth();
   const { profile, refresh } = useProfile();
   
@@ -268,7 +269,7 @@ export const Profile = ({ onBack, onRefresh, isSyncing, onManagePoints }: Profil
               <span className="text-xs text-amber-500 bg-amber-100 px-2 py-0.5 rounded-full">管理</span>
             </div>
             <div className="text-3xl font-bold text-amber-600">
-              {profile?.total_points || 0}
+              {totalPoints ?? profile?.total_points ?? 0}
             </div>
           </motion.button>
           <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-4">
@@ -348,16 +349,10 @@ export const Profile = ({ onBack, onRefresh, isSyncing, onManagePoints }: Profil
               </Button>
             </div>
 
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+            <div className="flex justify-between items-center py-2">
               <span className="text-gray-500">注册时间</span>
               <span className="text-gray-800">
                 {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '-'}
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2">
-              <span className="text-gray-500">用户ID</span>
-              <span className="text-gray-800 text-sm font-mono">
-                {user?.id?.slice(0, 8)}...
               </span>
             </div>
           </div>

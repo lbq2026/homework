@@ -175,6 +175,27 @@ export const getTotalCompletedTasks = (state: AppState): number => {
   }, 0);
 };
 
+// 计算总积分（作业完成积分 + 积分调整 - 兑换消耗）
+export const calculateTotalPoints = (state: AppState): number => {
+  // 1. 计算所有每日记录中获得的积分（作业完成）
+  const dailyRecordPoints = state.dailyRecords.reduce((sum, record) => {
+    return sum + (record.totalPoints || 0);
+  }, 0);
+  
+  // 2. 计算积分调整（手动加减分）
+  const adjustmentPoints = state.pointAdjustments.reduce((sum, adj) => {
+    return sum + (adj.points || 0);
+  }, 0);
+  
+  // 3. 计算兑换奖品消耗的积分
+  const redemptionPoints = state.redemptions.reduce((sum, red) => {
+    return sum + (red.points || 0);
+  }, 0);
+  
+  // 总积分 = 作业积分 + 调整积分 - 兑换消耗
+  return Math.max(0, dailyRecordPoints + adjustmentPoints - redemptionPoints);
+};
+
 // 检查并解锁徽章
 export const checkAndUnlockBadges = (state: AppState): BadgeType[] => {
   const newlyUnlocked: BadgeType[] = [];

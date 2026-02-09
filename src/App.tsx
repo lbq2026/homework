@@ -157,6 +157,7 @@ function AppContent() {
       case 'profile':
         return (
           <Profile 
+            totalPoints={localState.state.totalPoints}
             onBack={() => setCurrentView('home')} 
             onRefresh={localState.refreshData} 
             isSyncing={localState.isSyncing}
