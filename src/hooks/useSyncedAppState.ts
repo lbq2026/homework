@@ -71,25 +71,25 @@ export const useSyncedAppState = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  // 使用 ref 来跟踪是否已经初始化，避免重复加载
-  const initialized = useRef(false);
+  // 使用 ref 来跟踪当前加载的用户ID，用于检测用户切换
+  const currentUserId = useRef<string | null>(null);
   const isOnline = isSupabaseConfigured();
 
   // 从 Supabase 加载用户数据
-  const loadUserDataFromSupabase = useCallback(async () => {
-    if (!user || !isOnline) return null;
+  const loadUserDataFromSupabase = useCallback(async (userId: string) => {
+    if (!userId || !isOnline) return null;
     
     try {
       setIsSyncing(true);
       
       // 并行获取所有数据
       const [tasksRes, rewardsRes, recordsRes, redemptionsRes, badgesRes, profileRes] = await Promise.all([
-        supabase.from('tasks').select('*').eq('user_id', user.id).eq('is_active', true),
-        supabase.from('rewards').select('*').eq('user_id', user.id).eq('is_active', true),
-        supabase.from('daily_records').select('*').eq('user_id', user.id),
-        supabase.from('redemptions').select('*').eq('user_id', user.id),
-        supabase.from('badges').select('badge_type, unlocked_at').eq('user_id', user.id),
-        supabase.from('profiles').select('total_points').eq('id', user.id).single(),
+        supabase.from('tasks').select('*').eq('user_id', userId).eq('is_active', true),
+        supabase.from('rewards').select('*').eq('user_id', userId).eq('is_active', true),
+        supabase.from('daily_records').select('*').eq('user_id', userId),
+        supabase.from('redemptions').select('*').eq('user_id', userId),
+        supabase.from('badges').select('badge_type, unlocked_at').eq('user_id', userId),
+        supabase.from('profiles').select('total_points').eq('id', userId).maybeSingle(),
       ]);
 
       // 处理任务数据
@@ -132,8 +132,23 @@ export const useSyncedAppState = () => {
       // 处理徽章数据
       const badges = mergeBadges([], badgesRes.data || []);
 
-      // 获取总积分
-      const totalPoints = profileRes.data?.total_points || 0;
+      // 获取总积分，如果 profile 不存在则自动创建
+      let totalPoints = profileRes.data?.total_points || 0;
+      
+      if (!profileRes.data) {
+        // Profile 不存在，尝试创建
+        try {
+          const { error: createError } = await supabase.from('profiles').insert({
+            id: userId,
+            total_points: 0,
+          });
+          if (createError) {
+            console.warn('Failed to create profile:', createError);
+          }
+        } catch (e) {
+          console.warn('Error creating profile:', e);
+        }
+      }
 
       return {
         tasks,
@@ -149,11 +164,11 @@ export const useSyncedAppState = () => {
     } finally {
       setIsSyncing(false);
     }
-  }, [user, isOnline]);
+  }, [isOnline]);
 
   // 同步数据到 Supabase
   const syncToSupabase = useCallback(async (newState: AppState) => {
-    if (!user || !isOnline) return;
+    if (!user?.id || !isOnline) return;
     
     try {
       setIsSyncing(true);
@@ -180,25 +195,49 @@ export const useSyncedAppState = () => {
     }
   }, [user, isOnline]);
 
-  // 初始化数据
+  // 初始化数据 - 监听用户变化
   useEffect(() => {
     const initializeData = async () => {
       setIsLoading(true);
       
-      if (user && isOnline) {
+      // 检测用户是否切换
+      const userChanged = currentUserId.current !== (user?.id || null);
+      currentUserId.current = user?.id || null;
+      
+      if (user?.id && isOnline) {
         // 用户已登录，从 Supabase 加载数据
-        const serverData = await loadUserDataFromSupabase();
+        const serverData = await loadUserDataFromSupabase(user.id);
+        
         if (serverData) {
-          // 合并本地和服务器数据（服务器数据优先）
+          // 如果用户切换了或者是新设备（本地数据不是当前用户的），优先使用服务器数据
           const localData = loadState();
-          setState({
-            ...getInitialState(),
-            ...localData,
-            ...serverData,
-            // 徽章需要特殊处理，合并解锁状态
-            badges: mergeBadges(localData.badges, serverData.badges as unknown as { badge_type: string; unlocked_at: string }[]),
-            settings: localData.settings, // 设置保留本地
-          });
+          
+          // 检查本地数据是否属于当前用户（通过检查任务中是否有当前用户的任务）
+          // 由于本地存储没有用户标识，我们假设如果是用户切换，应该优先使用服务器数据
+          const isNewDeviceOrUserSwitch = userChanged;
+          
+          if (isNewDeviceOrUserSwitch) {
+            // 新设备或用户切换：使用服务器数据，但保留本地设置
+            setState({
+              ...getInitialState(),
+              ...serverData,
+              settings: {
+                ...localData.settings,
+                // 保留音效设置，但更新其他设置
+                soundEnabled: localData.settings?.soundEnabled ?? true,
+              },
+            });
+          } else {
+            // 同一用户：合并本地和服务器数据（服务器数据优先）
+            setState({
+              ...getInitialState(),
+              ...localData,
+              ...serverData,
+              // 徽章需要特殊处理，合并解锁状态
+              badges: mergeBadges(localData.badges, serverData.badges as unknown as { badge_type: string; unlocked_at: string }[]),
+              settings: localData.settings, // 设置保留本地
+            });
+          }
         } else {
           // 服务器数据加载失败，使用本地数据
           setState(loadState());
@@ -208,21 +247,18 @@ export const useSyncedAppState = () => {
         setState(loadState());
       }
       
-      initialized.current = true;
       setIsLoading(false);
     };
 
-    if (!initialized.current) {
-      initializeData();
-    }
-  }, [user, isOnline, loadUserDataFromSupabase]);
+    initializeData();
+  }, [user?.id, isOnline, loadUserDataFromSupabase]); // 使用 user.id 作为依赖
 
   // 保存状态到本地存储
   useEffect(() => {
-    if (initialized.current) {
+    if (!isLoading) {
       saveState(state);
     }
-  }, [state]);
+  }, [state, isLoading]);
 
   // 添加作业
   const addTask = useCallback(async (task: Omit<Task, 'id' | 'createdAt'>) => {
@@ -238,7 +274,7 @@ export const useSyncedAppState = () => {
     }));
     
     // 如果已登录，同步到 Supabase
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('tasks').insert({
           id: newTask.id,
@@ -263,7 +299,7 @@ export const useSyncedAppState = () => {
       tasks: prev.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t),
     }));
     
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('tasks').update({
           name: updates.name,
@@ -285,7 +321,7 @@ export const useSyncedAppState = () => {
       tasks: prev.tasks.filter(t => t.id !== taskId),
     }));
     
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('tasks').update({ is_active: false }).eq('id', taskId);
       } catch (error) {
@@ -402,7 +438,7 @@ export const useSyncedAppState = () => {
         };
         
         // 同步徽章到 Supabase
-        if (user && isOnline) {
+        if (user?.id && isOnline) {
           unlocked.forEach(async (badgeType) => {
             await supabase.from('badges').upsert({
               user_id: user.id,
@@ -470,7 +506,7 @@ export const useSyncedAppState = () => {
         };
         
         // 同步徽章到 Supabase
-        if (user && isOnline) {
+        if (user?.id && isOnline) {
           unlocked.forEach(async (badgeType) => {
             await supabase.from('badges').upsert({
               user_id: user.id,
@@ -499,7 +535,7 @@ export const useSyncedAppState = () => {
       rewards: [...prev.rewards, newReward],
     }));
     
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').insert({
           id: newReward.id,
@@ -525,7 +561,7 @@ export const useSyncedAppState = () => {
       rewards: prev.rewards.map(r => r.id === rewardId ? { ...r, ...updates } : r),
     }));
     
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').update({
           name: updates.name,
@@ -548,7 +584,7 @@ export const useSyncedAppState = () => {
       rewards: prev.rewards.filter(r => r.id !== rewardId),
     }));
     
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').update({ is_active: false }).eq('id', rewardId);
       } catch (error) {
@@ -592,7 +628,7 @@ export const useSyncedAppState = () => {
     });
     
     // 同步到 Supabase
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await supabase.rpc('redeem_reward', {
           p_user_id: user.id,
@@ -640,7 +676,7 @@ export const useSyncedAppState = () => {
     setState(initial);
     
     // 如果已登录，清空 Supabase 数据
-    if (user && isOnline) {
+    if (user?.id && isOnline) {
       try {
         await Promise.all([
           supabase.from('tasks').delete().eq('user_id', user.id),
@@ -686,22 +722,22 @@ export const useSyncedAppState = () => {
     };
   }, [state, getTodayRecord]);
 
-  // 手动刷新数据（用于用户切换后）
+  // 手动刷新数据（用于强制同步）
   const refreshData = useCallback(async () => {
-    initialized.current = false;
-    const serverData = await loadUserDataFromSupabase();
+    if (!user?.id) return;
+    
+    setIsLoading(true);
+    const serverData = await loadUserDataFromSupabase(user.id);
     if (serverData) {
       const localData = loadState();
       setState({
         ...getInitialState(),
-        ...localData,
         ...serverData,
-        badges: mergeBadges(localData.badges, serverData.badges as unknown as { badge_type: string; unlocked_at: string }[]),
-        settings: localData.settings,
+        settings: localData.settings, // 保留本地设置
       });
     }
-    initialized.current = true;
-  }, [loadUserDataFromSupabase]);
+    setIsLoading(false);
+  }, [user?.id, loadUserDataFromSupabase]);
 
   return {
     state,

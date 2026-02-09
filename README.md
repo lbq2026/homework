@@ -27,6 +27,7 @@
 
 - 用户认证
   - 邮箱密码登录
+  - 手机号登录
   - 支持 Supabase 云端同步
   - 本地数据存储支持
 
@@ -109,8 +110,10 @@ src/
 ├── hooks/              # 自定义 Hooks
 │   ├── useAppState.ts
 │   ├── useAuth.tsx
+│   ├── useDataBackup.ts
 │   ├── useMobile.ts
-│   └── useSupabaseData.ts
+│   ├── useSupabaseData.ts
+│   └── useSyncedAppState.ts
 ├── lib/                # 工具库
 │   ├── supabase.ts     # Supabase 客户端配置
 │   └── utils.ts        # 通用工具函数
@@ -123,6 +126,7 @@ src/
 ├── views/              # 页面视图
 │   ├── Achievements.tsx
 │   ├── Auth.tsx
+│   ├── BackupRestore.tsx
 │   ├── Home.tsx
 │   ├── Profile.tsx
 │   ├── Rewards.tsx

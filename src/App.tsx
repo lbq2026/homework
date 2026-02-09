@@ -147,6 +147,10 @@ function AppContent() {
             }}
             onResetAll={localState.resetAll}
             onResetToday={localState.resetToday}
+            onRestoreFromBackup={(backupState) => {
+              localState.importAppData(JSON.stringify(backupState));
+              toast.success('云端数据恢复成功!');
+            }}
           />
         );
       case 'profile':

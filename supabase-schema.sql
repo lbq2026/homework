@@ -14,9 +14,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     username TEXT,
     avatar_url TEXT,
+    phone TEXT,
+    email TEXT,
     role TEXT DEFAULT 'child' CHECK (role IN ('parent', 'child')),
     parent_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    total_points INTEGER DEFAULT 0
+    total_points INTEGER DEFAULT 0,
+    remember_me BOOLEAN DEFAULT FALSE
 );
 
 -- 启用 RLS
@@ -30,6 +33,10 @@ CREATE POLICY "Users can view own profile"
 CREATE POLICY "Users can update own profile" 
     ON public.profiles FOR UPDATE 
     USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+    ON public.profiles FOR INSERT
+    WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Parents can view children's profiles"
     ON public.profiles FOR SELECT
@@ -264,6 +271,41 @@ COMMENT ON TABLE public.daily_records IS '每日作业完成记录';
 COMMENT ON TABLE public.rewards IS '奖品库，每个用户有自己的奖品设置';
 COMMENT ON TABLE public.redemptions IS '奖品兑换记录';
 COMMENT ON TABLE public.badges IS '用户解锁的徽章记录';
+
+-- ============================================
+-- 12. 数据备份表 (data_backups)
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.data_backups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    backup_name TEXT NOT NULL,
+    backup_data JSONB NOT NULL,
+    device_info TEXT,
+    file_size INTEGER DEFAULT 0
+);
+
+-- 启用 RLS
+ALTER TABLE public.data_backups ENABLE ROW LEVEL SECURITY;
+
+-- RLS 策略
+CREATE POLICY "Users can view own backups"
+    ON public.data_backups FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own backups"
+    ON public.data_backups FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own backups"
+    ON public.data_backups FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- 创建索引
+CREATE INDEX idx_data_backups_user_id ON public.data_backups(user_id);
+CREATE INDEX idx_data_backups_created_at ON public.data_backups(created_at);
+
+COMMENT ON TABLE public.data_backups IS '用户数据备份表，存储云端备份数据';
 
 -- ============================================
 -- 11. 创建兑换奖品的存储过程

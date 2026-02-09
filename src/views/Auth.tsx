@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeOff, Sparkles, Shield, Smile } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Sparkles, Shield, Smile, Phone, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/hooks/useAuth.tsx';
 
 interface AuthProps {
@@ -12,20 +13,27 @@ interface AuthProps {
 }
 
 export const Auth = ({ onLoginSuccess }: AuthProps) => {
-  const { signIn, signUp, isConfigured } = useAuth();
+  const { signIn, signInWithPhone, signUp, isConfigured } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // 登录方式切换
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
   
   // 登录表单
   const [loginData, setLoginData] = useState({
     email: '',
+    phone: '',
     password: '',
+    rememberMe: false,
   });
   
   // 注册表单
   const [registerData, setRegisterData] = useState({
     email: '',
+    phone: '',
     password: '',
     confirmPassword: '',
     username: '',
@@ -37,10 +45,17 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
     setError(null);
     setIsLoading(true);
     
-    const { error } = await signIn(loginData.email, loginData.password);
+    let result;
+    if (loginMethod === 'email') {
+      result = await signIn(loginData.email, loginData.password, loginData.rememberMe);
+    } else {
+      // 手机号登录，添加+86前缀
+      const fullPhone = loginData.phone.startsWith('+') ? loginData.phone : `+86${loginData.phone}`;
+      result = await signInWithPhone(fullPhone, loginData.password, loginData.rememberMe);
+    }
     
-    if (error) {
-      setError(error.message);
+    if (result.error) {
+      setError(result.error.message);
     } else {
       onLoginSuccess();
     }
@@ -50,6 +65,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     
     if (registerData.password !== registerData.confirmPassword) {
       setError('两次输入的密码不一致');
@@ -63,16 +79,35 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
     
     setIsLoading(true);
     
+    const metadata: { username?: string; role?: 'parent' | 'child'; phone?: string } = {
+      username: registerData.username,
+      role: registerData.role,
+    };
+    
+    // 如果有手机号，添加到 metadata
+    if (registerData.phone) {
+      metadata.phone = registerData.phone.startsWith('+') ? registerData.phone : `+86${registerData.phone}`;
+    }
+    
     const { error } = await signUp(
       registerData.email, 
       registerData.password,
-      { username: registerData.username, role: registerData.role }
+      metadata
     );
     
     if (error) {
       setError(error.message);
     } else {
-      setError('注册成功！请查看邮箱验证邮件');
+      setSuccessMessage('注册成功！请查看邮箱验证邮件');
+      // 清空表单
+      setRegisterData({
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+        username: '',
+        role: 'child',
+      });
     }
     setIsLoading(false);
   };
@@ -149,21 +184,73 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   onSubmit={handleLogin}
                   className="space-y-4"
                 >
-                  <div>
-                    <Label htmlFor="login-email">邮箱</Label>
-                    <div className="relative mt-1">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <Input
-                        id="login-email"
-                        type="email"
-                        placeholder="your@email.com"
-                        value={loginData.email}
-                        onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
+                  {/* 登录方式切换 */}
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setLoginMethod('email')}
+                      className={`flex-1 py-2 text-sm rounded-lg transition-all ${
+                        loginMethod === 'email'
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      <Mail className="w-4 h-4 inline mr-1" />
+                      邮箱登录
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLoginMethod('phone')}
+                      className={`flex-1 py-2 text-sm rounded-lg transition-all ${
+                        loginMethod === 'phone'
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      <Phone className="w-4 h-4 inline mr-1" />
+                      手机号登录
+                    </button>
                   </div>
+
+                  {loginMethod === 'email' ? (
+                    <div>
+                      <Label htmlFor="login-email">邮箱</Label>
+                      <div className="relative mt-1">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <Input
+                          id="login-email"
+                          type="email"
+                          placeholder="your@email.com"
+                          value={loginData.email}
+                          onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                          className="pl-10"
+                          required
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label htmlFor="login-phone">手机号</Label>
+                      <div className="relative mt-1">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <div className="flex">
+                          <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                            +86
+                          </span>
+                          <Input
+                            id="login-phone"
+                            type="tel"
+                            placeholder="请输入手机号"
+                            value={loginData.phone}
+                            onChange={(e) => setLoginData({ ...loginData, phone: e.target.value })}
+                            className="rounded-l-none pl-3"
+                            required
+                            maxLength={11}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <Label htmlFor="login-password">密码</Label>
@@ -185,6 +272,22 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                       >
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
+                    </div>
+                  </div>
+
+                  {/* 记住我选项 */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="remember-me"
+                        checked={loginData.rememberMe}
+                        onCheckedChange={(checked) => 
+                          setLoginData({ ...loginData, rememberMe: checked as boolean })
+                        }
+                      />
+                      <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">
+                        记住登录状态（30天）
+                      </Label>
                     </div>
                   </div>
 
@@ -218,7 +321,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   className="space-y-4"
                 >
                   <div>
-                    <Label htmlFor="register-username">用户名</Label>
+                    <Label htmlFor="register-username">用户名 <span className="text-red-500">*</span></Label>
                     <div className="relative mt-1">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                       <Input
@@ -234,7 +337,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   </div>
 
                   <div>
-                    <Label htmlFor="register-email">邮箱</Label>
+                    <Label htmlFor="register-email">邮箱 <span className="text-red-500">*</span></Label>
                     <div className="relative mt-1">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                       <Input
@@ -250,7 +353,28 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   </div>
 
                   <div>
-                    <Label htmlFor="register-password">密码</Label>
+                    <Label htmlFor="register-phone">手机号（可选）</Label>
+                    <div className="relative mt-1">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <div className="flex">
+                        <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                          +86
+                        </span>
+                        <Input
+                          id="register-phone"
+                          type="tel"
+                          placeholder="绑定手机号用于登录"
+                          value={registerData.phone}
+                          onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
+                          className="rounded-l-none pl-3"
+                          maxLength={11}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="register-password">密码 <span className="text-red-500">*</span></Label>
                     <div className="relative mt-1">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                       <Input
@@ -261,6 +385,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                         onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
                         className="pl-10 pr-10"
                         required
+                        minLength={6}
                       />
                       <button
                         type="button"
@@ -273,7 +398,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   </div>
 
                   <div>
-                    <Label htmlFor="register-confirm">确认密码</Label>
+                    <Label htmlFor="register-confirm">确认密码 <span className="text-red-500">*</span></Label>
                     <div className="relative mt-1">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                       <Input
@@ -289,7 +414,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                   </div>
 
                   <div>
-                    <Label>角色</Label>
+                    <Label>角色 <span className="text-red-500">*</span></Label>
                     <div className="grid grid-cols-2 gap-3 mt-1">
                       <button
                         type="button"
@@ -322,11 +447,20 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                     <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className={`text-sm text-center p-2 rounded-lg ${
-                        error.includes('成功') ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'
-                      }`}
+                      className="text-red-500 text-sm text-center bg-red-50 p-2 rounded-lg"
                     >
                       {error}
+                    </motion.div>
+                  )}
+
+                  {successMessage && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-green-600 text-sm text-center bg-green-50 p-2 rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      {successMessage}
                     </motion.div>
                   )}
 
@@ -346,3 +480,5 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
     </div>
   );
 };
+
+export default Auth;

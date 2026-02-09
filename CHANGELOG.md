@@ -22,10 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 移除功能将在此处列出
 
 ### Fixed
-- 修复将在此处列出
+- 修复 `useAuth` 中 `expiresIn` 属性的 TypeScript 类型错误
+- 修复 `Settings` 和 `Profile` 组件中未使用变量/导入的警告
+- 修复 `profiles` 表查询时使用 `.maybeSingle()` 替代 `.single()` 避免记录不存在时报错
+- 添加自动创建用户 profile 的逻辑，提升首次使用体验
 
 ### Security
-- 安全更新将在此处列出
+- 在 Supabase Schema 中添加 `Users can insert own profile` RLS 策略，允许用户创建自己的 profile 记录
 
 ## [1.0.0] - 2026-02-05
 

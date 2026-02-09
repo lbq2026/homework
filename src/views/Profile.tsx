@@ -1,10 +1,16 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, RefreshCw, Cloud } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, 
+  RefreshCw, Cloud, Phone, Lock, Shield, Smartphone, Key
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth.tsx';
 import { useProfile } from '@/hooks/useSupabaseData';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+
 
 interface ProfileProps {
   onBack: () => void;
@@ -13,17 +19,44 @@ interface ProfileProps {
 }
 
 export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
-  const { user, signOut } = useAuth();
-  const { profile } = useProfile();
-  const [isEditing, setIsEditing] = useState(false);
-  const [username, setUsername] = useState(profile?.username || '');
+  const { user, signOut, updateProfile, updateEmail, updatePhone, updatePassword } = useAuth();
+  const { profile, refresh } = useProfile();
+  
+  // 编辑状态
+  const [isEditingName, setIsEditingName] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // 表单数据
+  const [username, setUsername] = useState(profile?.username || '');
+  
+  // 对话框状态
+  const [showBindPhone, setShowBindPhone] = useState(false);
+  const [showBindEmail, setShowBindEmail] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  
+  // 绑定表单
+  const [phoneForm, setPhoneForm] = useState({ phone: '', verifyCode: '' });
+  const [emailForm, setEmailForm] = useState({ email: '' });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
 
-  const handleSave = async () => {
+  const handleSaveName = async () => {
+    if (!username.trim()) return;
     setIsLoading(true);
-    // 这里可以添加更新用户名的逻辑
-    setIsEditing(false);
+    const { error } = await updateProfile({ username: username.trim() });
+    if (error) {
+      setMessage({ type: 'error', text: '更新失败：' + error.message });
+    } else {
+      setMessage({ type: 'success', text: '昵称已更新' });
+      setIsEditingName(false);
+      await refresh();
+    }
     setIsLoading(false);
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const handleLogout = async () => {
@@ -34,6 +67,67 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
     if (onRefresh) {
       await onRefresh();
     }
+  };
+
+  // 绑定手机号
+  const handleBindPhone = async () => {
+    if (!phoneForm.phone.trim()) {
+      setMessage({ type: 'error', text: '请输入手机号' });
+      return;
+    }
+    setIsLoading(true);
+    const fullPhone = phoneForm.phone.startsWith('+') ? phoneForm.phone : `+86${phoneForm.phone}`;
+    const { error } = await updatePhone(fullPhone);
+    if (error) {
+      setMessage({ type: 'error', text: '绑定失败：' + error.message });
+    } else {
+      setMessage({ type: 'success', text: '手机号绑定成功' });
+      setShowBindPhone(false);
+      await refresh();
+    }
+    setIsLoading(false);
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  // 绑定/修改邮箱
+  const handleBindEmail = async () => {
+    if (!emailForm.email.trim()) {
+      setMessage({ type: 'error', text: '请输入邮箱' });
+      return;
+    }
+    setIsLoading(true);
+    const { error } = await updateEmail(emailForm.email.trim());
+    if (error) {
+      setMessage({ type: 'error', text: '绑定失败：' + error.message });
+    } else {
+      setMessage({ type: 'success', text: '验证邮件已发送，请查收' });
+      setShowBindEmail(false);
+    }
+    setIsLoading(false);
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  // 修改密码
+  const handleChangePassword = async () => {
+    if (passwordForm.newPassword.length < 6) {
+      setMessage({ type: 'error', text: '新密码至少需要6位' });
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setMessage({ type: 'error', text: '两次输入的密码不一致' });
+      return;
+    }
+    setIsLoading(true);
+    const { error } = await updatePassword(passwordForm.newPassword);
+    if (error) {
+      setMessage({ type: 'error', text: '修改失败：' + error.message });
+    } else {
+      setMessage({ type: 'success', text: '密码修改成功' });
+      setShowChangePassword(false);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    }
+    setIsLoading(false);
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const getRoleLabel = (role?: string) => {
@@ -52,6 +146,19 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
     }
   };
 
+  // 隐藏部分信息的辅助函数
+  const maskPhone = (phone?: string) => {
+    if (!phone) return '未绑定';
+    return phone.replace(/(\+\d{2})\d{7}(\d{4})/, '$1****$2');
+  };
+
+  const maskEmail = (email?: string) => {
+    if (!email) return '未绑定';
+    const [local, domain] = email.split('@');
+    if (local.length <= 2) return email;
+    return `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50">
       {/* 头部 */}
@@ -66,6 +173,24 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
       </header>
 
       <div className="p-4 pb-24 space-y-4">
+        {/* 消息提示 */}
+        <AnimatePresence>
+          {message && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`p-3 rounded-xl text-center text-sm ${
+                message.type === 'success' 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-red-100 text-red-700'
+              }`}
+            >
+              {message.text}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* 用户信息卡片 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -81,7 +206,7 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
               )}
             </div>
             <div className="flex-1">
-              {isEditing ? (
+              {isEditingName ? (
                 <div className="flex items-center gap-2">
                   <Input
                     value={username}
@@ -89,17 +214,22 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
                     className="w-40"
                     placeholder="用户名"
                   />
-                  <Button size="icon" variant="ghost" onClick={handleSave} disabled={isLoading}>
+                  <Button size="icon" variant="ghost" onClick={handleSaveName} disabled={isLoading}>
                     <Check className="w-4 h-4 text-green-500" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { setIsEditing(false); setUsername(profile?.username || ''); }}>
+                  <Button size="icon" variant="ghost" onClick={() => { 
+                    setIsEditingName(false); 
+                    setUsername(profile?.username || ''); 
+                  }}>
                     <X className="w-4 h-4 text-red-500" />
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-gray-800">{profile?.username || user?.email?.split('@')[0]}</h2>
-                  <Button size="icon" variant="ghost" onClick={() => setIsEditing(true)}>
+                  <h2 className="text-xl font-bold text-gray-800">
+                    {profile?.username || user?.email?.split('@')[0]}
+                  </h2>
+                  <Button size="icon" variant="ghost" onClick={() => setIsEditingName(true)}>
                     <Edit2 className="w-4 h-4 text-gray-400" />
                   </Button>
                 </div>
@@ -108,10 +238,11 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
                 <span className={`text-xs px-2 py-0.5 rounded-full ${getRoleColor(profile?.role)}`}>
                   {getRoleLabel(profile?.role)}
                 </span>
-              </div>
-              <div className="flex items-center gap-2 mt-2 text-gray-500 text-sm">
-                <Mail className="w-4 h-4" />
-                <span>{user?.email}</span>
+                {profile?.remember_me && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                    已记住登录
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -151,24 +282,75 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
           transition={{ delay: 0.2 }}
           className="bg-white rounded-2xl p-4 shadow-md"
         >
-          <h3 className="font-bold text-gray-800 mb-4">账户信息</h3>
+          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-blue-500" />
+            账户信息
+          </h3>
           <div className="space-y-3">
+            {/* 邮箱 */}
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-500">邮箱</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-800 text-sm">{maskEmail(user?.email)}</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 text-xs text-blue-600"
+                  onClick={() => setShowBindEmail(true)}
+                >
+                  {user?.email ? '修改' : '绑定'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 手机号 */}
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-500">手机号</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-800 text-sm">{maskPhone(profile?.phone || user?.phone)}</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 text-xs text-blue-600"
+                  onClick={() => setShowBindPhone(true)}
+                >
+                  {(profile?.phone || user?.phone) ? '修改' : '绑定'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 密码 */}
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-500">密码</span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 text-xs text-blue-600"
+                onClick={() => setShowChangePassword(true)}
+              >
+                修改密码
+              </Button>
+            </div>
+
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
               <span className="text-gray-500">注册时间</span>
               <span className="text-gray-800">
                 {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '-'}
               </span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+            <div className="flex justify-between items-center py-2">
               <span className="text-gray-500">用户ID</span>
               <span className="text-gray-800 text-sm font-mono">
                 {user?.id?.slice(0, 8)}...
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-2">
-              <span className="text-gray-500">认证方式</span>
-              <span className="text-gray-800">
-                {user?.app_metadata?.provider === 'email' ? '邮箱' : user?.app_metadata?.provider || '邮箱'}
               </span>
             </div>
           </div>
@@ -181,7 +363,10 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
           transition={{ delay: 0.3 }}
           className="bg-white rounded-2xl p-4 shadow-md"
         >
-          <h3 className="font-bold text-gray-800 mb-4">数据同步</h3>
+          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Cloud className="w-5 h-5 text-blue-500" />
+            数据同步
+          </h3>
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
               <span className="text-gray-500">同步状态</span>
@@ -227,6 +412,156 @@ export const Profile = ({ onBack, onRefresh, isSyncing }: ProfileProps) => {
           </Button>
         </motion.div>
       </div>
+
+      {/* 绑定手机号对话框 */}
+      <Dialog open={showBindPhone} onOpenChange={setShowBindPhone}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Smartphone className="w-5 h-5 text-blue-500" />
+              {(profile?.phone || user?.phone) ? '修改手机号' : '绑定手机号'}
+            </DialogTitle>
+            <DialogDescription>
+              绑定手机号后可以使用手机号登录
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label>手机号</Label>
+              <div className="flex mt-1">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                  +86
+                </span>
+                <Input
+                  type="tel"
+                  placeholder="请输入手机号"
+                  value={phoneForm.phone}
+                  onChange={(e) => setPhoneForm({ ...phoneForm, phone: e.target.value })}
+                  className="rounded-l-none"
+                  maxLength={11}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowBindPhone(false)}
+                className="flex-1"
+              >
+                取消
+              </Button>
+              <Button 
+                onClick={handleBindPhone}
+                disabled={isLoading}
+                className="flex-1 bg-blue-500 hover:bg-blue-600"
+              >
+                {isLoading ? '处理中...' : '确认'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 绑定邮箱对话框 */}
+      <Dialog open={showBindEmail} onOpenChange={setShowBindEmail}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-blue-500" />
+              {user?.email ? '修改邮箱' : '绑定邮箱'}
+            </DialogTitle>
+            <DialogDescription>
+              {user?.email 
+                ? '修改邮箱后需要重新验证' 
+                : '绑定邮箱后可以使用邮箱登录和找回密码'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label>邮箱地址</Label>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={emailForm.email}
+                onChange={(e) => setEmailForm({ ...emailForm, email: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowBindEmail(false)}
+                className="flex-1"
+              >
+                取消
+              </Button>
+              <Button 
+                onClick={handleBindEmail}
+                disabled={isLoading}
+                className="flex-1 bg-blue-500 hover:bg-blue-600"
+              >
+                {isLoading ? '发送中...' : '发送验证'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 修改密码对话框 */}
+      <Dialog open={showChangePassword} onOpenChange={setShowChangePassword}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-blue-500" />
+              修改密码
+            </DialogTitle>
+            <DialogDescription>
+              请设置一个新的安全密码
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label>新密码</Label>
+              <Input
+                type="password"
+                placeholder="至少6位"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                className="mt-1"
+                minLength={6}
+              />
+            </div>
+            <div>
+              <Label>确认密码</Label>
+              <Input
+                type="password"
+                placeholder="再次输入新密码"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowChangePassword(false)}
+                className="flex-1"
+              >
+                取消
+              </Button>
+              <Button 
+                onClick={handleChangePassword}
+                disabled={isLoading}
+                className="flex-1 bg-blue-500 hover:bg-blue-600"
+              >
+                {isLoading ? '保存中...' : '确认修改'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+export default Profile;
