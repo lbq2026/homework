@@ -5,35 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**注意：此文件由自动化工具生成，请勿手动编辑。**
-
 ## [Unreleased]
 
 ### Added
-- 新增积分手动调整功能
-  - 支持手动增加积分并注明原因
-  - 支持手动扣除积分并注明原因
-  - 积分调整历史记录查看
-  - 云端同步积分调整记录
-- 新增 `point_adjustments` 数据表用于存储积分调整记录
+- **积分管理功能**
+  - 支持手动增加积分并注明原因（如：额外奖励、帮助家长等）
+  - 支持手动扣除积分并注明原因（如：违反约定、作业质量不佳等）
+  - 积分调整历史记录查看，支持按全部/加分/扣分筛选
+  - 积分统计（累计加分、累计扣分）
+  - 新增 `point_adjustments` 数据表用于存储积分调整记录
+- **用户认证增强**
+  - 新增手机号登录功能
+  - 支持记住登录状态（30天）
+- **云端备份功能**
+  - 支持创建云端备份
+  - 支持从云端恢复数据
+  - 查看历史备份列表
+  - 新增 `backups` 数据表用于存储云端备份
+- **个人中心**
+  - 用户资料展示与编辑
+  - 账户安全设置（修改密码、绑定邮箱/手机号）
+  - 数据同步状态显示
 
 ### Changed
-- 变更将在此处列出
-
-### Deprecated
-- 弃用功能将在此处列出
-
-### Removed
-- 移除功能将在此处列出
+- **积分管理入口迁移**：从设置页面移至个人中心的总积分卡片
+- **数据同步优化**：使用 `useSyncedAppState` Hook 统一管理本地和云端数据同步
 
 ### Fixed
 - 修复 `useAuth` 中 `expiresIn` 属性的 TypeScript 类型错误
 - 修复 `Settings` 和 `Profile` 组件中未使用变量/导入的警告
 - 修复 `profiles` 表查询时使用 `.maybeSingle()` 替代 `.single()` 避免记录不存在时报错
-- 添加自动创建用户 profile 的逻辑，提升首次使用体验
+- 修复用户注册时自动创建 profile 记录失败的问题
 
 ### Security
 - 在 Supabase Schema 中添加 `Users can insert own profile` RLS 策略，允许用户创建自己的 profile 记录
+- 添加 `point_adjustments` 表的 RLS 策略，确保用户只能查看和操作自己的积分调整记录
 
 ## [1.0.0] - 2026-02-05
 
@@ -74,5 +80,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Supabase Row Level Security (RLS) 策略
 - 用户数据隔离保护
 
-[Unreleased]: https://github.com/username/repo/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/username/repo/releases/tag/v1.0.0
+[Unreleased]: https://github.com/lbq2026/homework/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/lbq2026/homework/releases/tag/v1.0.0
