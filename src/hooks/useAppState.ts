@@ -135,10 +135,13 @@ export const useAppState = () => {
       };
       
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
-      const newState = {
+      let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
+      
+      // 计算新的总积分
+      newState.totalPoints = calculateTotalPoints(newState);
       
       // 播放音效
       if (newCompleted) {
@@ -190,10 +193,13 @@ export const useAppState = () => {
       };
       
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
-      const newState = {
+      let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
+      
+      // 计算新的总积分
+      newState.totalPoints = calculateTotalPoints(newState);
       
       playSuccessSound(prev.settings.soundEnabled);
       

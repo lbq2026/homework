@@ -459,6 +459,9 @@ export const useSyncedAppState = () => {
         dailyRecords: [...existingRecords, newRecord],
       };
       
+      // 计算新的总积分
+      newState.totalPoints = calculateTotalPoints(newState);
+      
       // 播放音效
       if (newCompleted) {
         playSuccessSound(prev.settings.soundEnabled);
@@ -528,6 +531,9 @@ export const useSyncedAppState = () => {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
+      
+      // 计算新的总积分
+      newState.totalPoints = calculateTotalPoints(newState);
       
       playSuccessSound(prev.settings.soundEnabled);
       
