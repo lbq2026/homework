@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 支持手动扣除积分并注明原因（如：违反约定、作业质量不佳等）
   - 积分调整历史记录查看，支持按全部/加分/扣分筛选
   - 积分统计（累计加分、累计扣分）
+  - **积分调整与账户绑定**，自动汇总至总积分，支持云端同步
   - 新增 `point_adjustments` 数据表用于存储积分调整记录
 - **用户认证增强**
   - 新增手机号登录功能
