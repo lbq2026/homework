@@ -722,8 +722,10 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
     
+    let newState: AppState | null = null;
+    
     setState(prev => {
-      const newState = {
+      newState = {
         ...prev,
         pointAdjustments: [adjustment, ...prev.pointAdjustments],
         totalPoints: prev.totalPoints + points,
@@ -746,8 +748,13 @@ export const useSyncedAppState = () => {
       return newState;
     });
     
+    // 立即同步到 Supabase
+    if (newState) {
+      await syncToSupabase(newState);
+    }
+    
     return true;
-  }, []);
+  }, [syncToSupabase]);
 
   // 重置今日记录
   const resetToday = useCallback(() => {
