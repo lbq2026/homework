@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AppState, Task, Reward, Redemption, BadgeType, DailyTask, DailyRecord, Badge } from '@/types';
+import type { AppState, Task, Reward, Redemption, BadgeType, DailyTask, DailyRecord, Badge, PointAdjustment } from '@/types';
 import { useAuth } from './useAuth.tsx';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -39,6 +39,7 @@ const getInitialState = (): AppState => ({
   rewards: [],
   redemptions: [],
   badges: DEFAULT_BADGES,
+  pointAdjustments: [],
   totalPoints: 0,
   settings: {
     soundEnabled: true,
@@ -83,13 +84,14 @@ export const useSyncedAppState = () => {
       setIsSyncing(true);
       
       // 并行获取所有数据
-      const [tasksRes, rewardsRes, recordsRes, redemptionsRes, badgesRes, profileRes] = await Promise.all([
+      const [tasksRes, rewardsRes, recordsRes, redemptionsRes, badgesRes, profileRes, adjustmentsRes] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', userId).eq('is_active', true),
         supabase.from('rewards').select('*').eq('user_id', userId).eq('is_active', true),
         supabase.from('daily_records').select('*').eq('user_id', userId),
         supabase.from('redemptions').select('*').eq('user_id', userId),
         supabase.from('badges').select('badge_type, unlocked_at').eq('user_id', userId),
         supabase.from('profiles').select('total_points').eq('id', userId).maybeSingle(),
+        supabase.from('point_adjustments').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
       ]);
 
       // 处理任务数据
@@ -132,6 +134,14 @@ export const useSyncedAppState = () => {
       // 处理徽章数据
       const badges = mergeBadges([], badgesRes.data || []);
 
+      // 处理积分调整记录
+      const pointAdjustments: PointAdjustment[] = adjustmentsRes.data?.map((a: Record<string, unknown>) => ({
+        id: a.id as string,
+        points: a.points as number,
+        reason: a.reason as string,
+        createdAt: new Date(a.created_at as string).getTime(),
+      })) || [];
+
       // 获取总积分，如果 profile 不存在则自动创建
       let totalPoints = profileRes.data?.total_points || 0;
       
@@ -156,6 +166,7 @@ export const useSyncedAppState = () => {
         dailyRecords,
         redemptions,
         badges,
+        pointAdjustments,
         totalPoints,
       };
     } catch (error) {
@@ -188,6 +199,16 @@ export const useSyncedAppState = () => {
       
       // 同步总积分
       await supabase.from('profiles').update({ total_points: newState.totalPoints }).eq('id', user.id);
+      
+      // 同步未同步的积分调整记录（新添加的记录）
+      const unsyncedAdjustments = newState.pointAdjustments.filter(a => !a.id);
+      for (const adjustment of unsyncedAdjustments) {
+        await supabase.from('point_adjustments').insert({
+          user_id: user.id,
+          points: adjustment.points,
+          reason: adjustment.reason,
+        });
+      }
     } catch (error) {
       console.error('Failed to sync to Supabase:', error);
     } finally {
@@ -692,6 +713,42 @@ export const useSyncedAppState = () => {
     }
   }, [user, isOnline]);
 
+  // 手动调整积分（加分或扣分）
+  const adjustPoints = useCallback(async (points: number, reason: string) => {
+    const adjustment: PointAdjustment = {
+      id: '', // 空字符串表示未同步到服务器
+      points,
+      reason,
+      createdAt: Date.now(),
+    };
+    
+    setState(prev => {
+      const newState = {
+        ...prev,
+        pointAdjustments: [adjustment, ...prev.pointAdjustments],
+        totalPoints: prev.totalPoints + points,
+      };
+      
+      // 播放音效
+      if (points > 0) {
+        playPointSound(newState.settings.soundEnabled);
+      }
+      
+      // 检查徽章解锁（加分时）
+      if (points > 0) {
+        const newlyUnlocked = checkAndUnlockBadges(newState);
+        if (newlyUnlocked.length > 0) {
+          setNewlyUnlockedBadges(prev => [...prev, ...newlyUnlocked]);
+          playBadgeSound(newState.settings.soundEnabled);
+        }
+      }
+      
+      return newState;
+    });
+    
+    return true;
+  }, []);
+
   // 重置今日记录
   const resetToday = useCallback(() => {
     setState(prev => resetTodayRecord(prev));
@@ -764,5 +821,6 @@ export const useSyncedAppState = () => {
     getTodayRecord,
     getStats,
     refreshData,
+    adjustPoints,
   };
 };

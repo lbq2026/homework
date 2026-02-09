@@ -25,6 +25,7 @@ const getInitialState = (): AppState => ({
   rewards: [],
   redemptions: [],
   badges: DEFAULT_BADGES,
+  pointAdjustments: [],
   totalPoints: 0,
   settings: {
     soundEnabled: true,

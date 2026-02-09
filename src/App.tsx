@@ -151,6 +151,14 @@ function AppContent() {
               localState.importAppData(JSON.stringify(backupState));
               toast.success('云端数据恢复成功!');
             }}
+            onAdjustPoints={async (points, reason) => {
+              const success = await localState.adjustPoints(points, reason);
+              if (success) {
+                const action = points > 0 ? '加分' : '扣分';
+                toast.success(`${action}成功！${points > 0 ? '+' : ''}${points} 积分`);
+              }
+              return success ?? false;
+            }}
           />
         );
       case 'profile':

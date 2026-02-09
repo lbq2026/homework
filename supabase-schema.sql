@@ -198,7 +198,31 @@ CREATE POLICY "Users can create own badges"
     WITH CHECK (auth.uid() = user_id);
 
 -- ============================================
--- 7. 创建触发器函数：自动更新 updated_at
+-- 7. 积分调整记录表 (point_adjustments)
+-- 用于记录手动增减积分的操作
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.point_adjustments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    points INTEGER NOT NULL,  -- 正数为加分，负数为扣分
+    reason TEXT NOT NULL      -- 调整原因说明
+);
+
+-- 启用 RLS
+ALTER TABLE public.point_adjustments ENABLE ROW LEVEL SECURITY;
+
+-- RLS 策略
+CREATE POLICY "Users can view own point adjustments"
+    ON public.point_adjustments FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own point adjustments"
+    ON public.point_adjustments FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+-- ============================================
+-- 8. 创建触发器函数：自动更新 updated_at
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$

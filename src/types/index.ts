@@ -42,6 +42,14 @@ export interface Redemption {
   redeemedAt: number;
 }
 
+// 积分调整记录（手动增减积分）
+export interface PointAdjustment {
+  id: string;
+  points: number;  // 正数为加分，负数为扣分
+  reason: string;  // 调整原因
+  createdAt: number;
+}
+
 // 徽章类型
 export type BadgeType = 
   | 'streak_3' | 'streak_7' | 'streak_15'
@@ -65,6 +73,7 @@ export interface AppState {
   rewards: Reward[];
   redemptions: Redemption[];
   badges: Badge[];
+  pointAdjustments: PointAdjustment[];  // 积分调整记录
   totalPoints: number;
   settings: {
     soundEnabled: boolean;

@@ -139,6 +139,7 @@ export const useDataBackup = () => {
         rewards: (backupData.rewards as AppState['rewards']) || [],
         redemptions: (backupData.redemptions as AppState['redemptions']) || [],
         badges: (backupData.badges as AppState['badges']) || [],
+        pointAdjustments: (backupData.pointAdjustments as AppState['pointAdjustments']) || [],
         totalPoints: (backupData.totalPoints as number) || 0,
         settings: (backupData.settings as AppState['settings']) || { soundEnabled: true, lastVisitDate: new Date().toISOString().split('T')[0] },
       };

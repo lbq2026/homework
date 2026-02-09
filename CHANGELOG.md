@@ -10,7 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 新功能将在此处列出
+- 新增积分手动调整功能
+  - 支持手动增加积分并注明原因
+  - 支持手动扣除积分并注明原因
+  - 积分调整历史记录查看
+  - 云端同步积分调整记录
+- 新增 `point_adjustments` 数据表用于存储积分调整记录
 
 ### Changed
 - 变更将在此处列出
