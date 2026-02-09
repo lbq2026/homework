@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, Volume2, VolumeX, Download, Upload, Trash2, AlertTriangle, 
   FileJson, RotateCcw, X, Cloud, CloudUpload, History, Smartphone, 
-  RefreshCw, Plus, Minus, Coins
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -24,7 +24,6 @@ interface SettingsProps {
   onResetAll: () => void;
   onResetToday: () => void;
   onRestoreFromBackup?: (state: AppState) => void;
-  onAdjustPoints?: (points: number, reason: string) => Promise<boolean>;
 }
 
 export const Settings = ({
@@ -36,7 +35,6 @@ export const Settings = ({
   onResetAll,
   onResetToday,
   onRestoreFromBackup,
-  onAdjustPoints,
 }: SettingsProps) => {
   const { user } = useAuth();
   const { 
@@ -60,13 +58,6 @@ export const Settings = ({
   const [backupName, setBackupName] = useState('');
   const [showRestoreConfirm, setShowRestoreConfirm] = useState<string | null>(null);
   const [backupMessage, setBackupMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
-  // 积分调整相关状态
-  const [showPointAdjust, setShowPointAdjust] = useState(false);
-  const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
-  const [adjustPoints, setAdjustPoints] = useState('');
-  const [adjustReason, setAdjustReason] = useState('');
-  const [showAdjustHistory, setShowAdjustHistory] = useState(false);
 
   // 加载备份列表
   useEffect(() => {
@@ -273,68 +264,6 @@ export const Settings = ({
               <div className="text-center py-4 text-gray-500 text-sm">
                 登录后可使用云端备份功能
               </div>
-            )}
-          </div>
-        </section>
-
-        {/* 积分管理 */}
-        <section className="bg-white rounded-2xl p-4 shadow-sm">
-          <h3 className="font-medium text-gray-800 mb-4 flex items-center gap-2">
-            <Coins className="w-5 h-5 text-amber-500" />
-            积分管理
-          </h3>
-          
-          <div className="space-y-3">
-            <div className="bg-amber-50 rounded-xl p-3 mb-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-amber-700">当前总积分</span>
-                <span className="text-2xl font-bold text-amber-600">{state.totalPoints}</span>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                className="h-14 border-green-200 hover:bg-green-50"
-                onClick={() => {
-                  setAdjustType('add');
-                  setAdjustPoints('');
-                  setAdjustReason('');
-                  setShowPointAdjust(true);
-                }}
-              >
-                <div className="flex flex-col items-center">
-                  <Plus className="w-5 h-5 text-green-600 mb-1" />
-                  <span className="text-sm text-green-700">手动加分</span>
-                </div>
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="h-14 border-red-200 hover:bg-red-50"
-                onClick={() => {
-                  setAdjustType('deduct');
-                  setAdjustPoints('');
-                  setAdjustReason('');
-                  setShowPointAdjust(true);
-                }}
-              >
-                <div className="flex flex-col items-center">
-                  <Minus className="w-5 h-5 text-red-600 mb-1" />
-                  <span className="text-sm text-red-700">手动扣分</span>
-                </div>
-              </Button>
-            </div>
-            
-            {state.pointAdjustments.length > 0 && (
-              <Button
-                variant="ghost"
-                className="w-full text-sm text-gray-600"
-                onClick={() => setShowAdjustHistory(true)}
-              >
-                <History className="w-4 h-4 mr-2" />
-                查看调整记录 ({state.pointAdjustments.length}条)
-              </Button>
             )}
           </div>
         </section>
@@ -667,140 +596,6 @@ export const Settings = ({
             onClick={() => setShowImportSuccess(false)}
           >
             确定
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* 积分调整对话框 */}
-      <Dialog open={showPointAdjust} onOpenChange={setShowPointAdjust}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-center flex items-center justify-center gap-2">
-              {adjustType === 'add' ? (
-                <>
-                  <Plus className="w-6 h-6 text-green-500" />
-                  手动加分
-                </>
-              ) : (
-                <>
-                  <Minus className="w-6 h-6 text-red-500" />
-                  手动扣分
-                </>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-sm text-gray-600">积分数量</Label>
-              <Input
-                type="number"
-                min={1}
-                value={adjustPoints}
-                onChange={(e) => setAdjustPoints(e.target.value)}
-                placeholder="请输入积分数量"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-sm text-gray-600">原因说明</Label>
-              <Input
-                type="text"
-                value={adjustReason}
-                onChange={(e) => setAdjustReason(e.target.value)}
-                placeholder={adjustType === 'add' ? '例如：额外奖励、帮助家长等' : '例如：违反约定、作业质量不佳等'}
-                className="mt-1"
-              />
-            </div>
-            {adjustType === 'deduct' && (
-              <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                ⚠️ 扣分后总积分不会低于 0
-              </p>
-            )}
-          </div>
-          <div className="flex gap-2 mt-4">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setShowPointAdjust(false)}
-            >
-              取消
-            </Button>
-            <Button
-              variant={adjustType === 'add' ? 'default' : 'destructive'}
-              className={adjustType === 'add' ? 'flex-1 bg-green-500 hover:bg-green-600' : 'flex-1'}
-              onClick={async () => {
-                const points = parseInt(adjustPoints);
-                if (isNaN(points) || points <= 0) return;
-                if (!adjustReason.trim()) return;
-                
-                const actualPoints = adjustType === 'add' ? points : -Math.min(points, state.totalPoints);
-                const success = await onAdjustPoints?.(actualPoints, adjustReason.trim());
-                if (success) {
-                  setShowPointAdjust(false);
-                }
-              }}
-              disabled={!adjustPoints || parseInt(adjustPoints) <= 0 || !adjustReason.trim()}
-            >
-              确认{adjustType === 'add' ? '加分' : '扣分'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 积分调整历史记录 */}
-      <Dialog open={showAdjustHistory} onOpenChange={setShowAdjustHistory}>
-        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              积分调整记录
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 mt-4">
-            {state.pointAdjustments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Coins className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>暂无调整记录</p>
-              </div>
-            ) : (
-              state.pointAdjustments.map((adj) => (
-                <div
-                  key={adj.id || adj.createdAt}
-                  className={`p-3 rounded-xl border ${
-                    adj.points > 0
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-red-50 border-red-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {adj.points > 0 ? (
-                        <Plus className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <Minus className="w-4 h-4 text-red-600" />
-                      )}
-                      <span
-                        className={`font-bold ${
-                          adj.points > 0 ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {adj.points > 0 ? '+' : ''}{adj.points}
-                      </span>
-                    </div>
-                    <span className="text-xs text-gray-400">
-                      {new Date(adj.createdAt).toLocaleDateString('zh-CN')}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700 mt-1">{adj.reason}</p>
-                </div>
-              ))
-            )}
-          </div>
-          <Button
-            className="w-full mt-4"
-            onClick={() => setShowAdjustHistory(false)}
-          >
-            关闭
           </Button>
         </DialogContent>
       </Dialog>

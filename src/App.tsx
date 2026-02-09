@@ -10,13 +10,14 @@ import { Tasks } from '@/views/Tasks';
 import { Rewards } from '@/views/Rewards';
 import { Achievements } from '@/views/Achievements';
 import { Settings } from '@/views/Settings';
+import { PointManagement } from '@/views/PointManagement';
 import { BadgeUnlockModal } from '@/components/BadgeUnlockModal';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { useSyncedAppState } from '@/hooks/useSyncedAppState';
 // import { isSupabaseConfigured } from '@/lib/supabase';
 
-type ViewType = 'home' | 'tasks' | 'rewards' | 'achievements' | 'settings' | 'profile';
+type ViewType = 'home' | 'tasks' | 'rewards' | 'achievements' | 'settings' | 'profile' | 'pointManagement';
 
 // 主应用内容
 function AppContent() {
@@ -151,6 +152,22 @@ function AppContent() {
               localState.importAppData(JSON.stringify(backupState));
               toast.success('云端数据恢复成功!');
             }}
+          />
+        );
+      case 'profile':
+        return (
+          <Profile 
+            onBack={() => setCurrentView('home')} 
+            onRefresh={localState.refreshData} 
+            isSyncing={localState.isSyncing}
+            onManagePoints={() => setCurrentView('pointManagement')}
+          />
+        );
+      case 'pointManagement':
+        return (
+          <PointManagement
+            state={localState.state}
+            onBack={() => setCurrentView('profile')}
             onAdjustPoints={async (points, reason) => {
               const success = await localState.adjustPoints(points, reason);
               if (success) {
@@ -161,8 +178,6 @@ function AppContent() {
             }}
           />
         );
-      case 'profile':
-        return <Profile onBack={() => setCurrentView('home')} onRefresh={localState.refreshData} isSyncing={localState.isSyncing} />;
       default:
         return null;
     }
