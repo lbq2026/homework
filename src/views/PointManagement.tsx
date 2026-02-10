@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Plus, Minus, Coins, History, TrendingUp, TrendingDown,
-  Calendar, Award
+  Calendar, Award, Pencil, Trash2, AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { AppState, PointAdjustment } from '@/types';
 
@@ -15,13 +15,25 @@ interface PointManagementProps {
   state: AppState;
   onBack: () => void;
   onAdjustPoints: (points: number, reason: string) => Promise<boolean>;
+  onEditPointAdjustment?: (id: string, points: number, reason: string) => Promise<boolean>;
+  onDeletePointAdjustment?: (id: string) => Promise<boolean>;
 }
 
-export const PointManagement = ({ state, onBack, onAdjustPoints }: PointManagementProps) => {
+export const PointManagement = ({ 
+  state, 
+  onBack, 
+  onAdjustPoints,
+  onEditPointAdjustment,
+  onDeletePointAdjustment
+}: PointManagementProps) => {
   const [showAdjustDialog, setShowAdjustDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
   const [adjustPoints, setAdjustPoints] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
+  const [editingAdjustment, setEditingAdjustment] = useState<PointAdjustment | null>(null);
+  const [deletingAdjustment, setDeletingAdjustment] = useState<PointAdjustment | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 计算统计数据
@@ -54,6 +66,52 @@ export const PointManagement = ({ state, onBack, onAdjustPoints }: PointManageme
     setAdjustPoints('');
     setAdjustReason('');
     setShowAdjustDialog(true);
+  };
+
+  const openEditDialog = (adjustment: PointAdjustment) => {
+    setEditingAdjustment(adjustment);
+    setAdjustPoints(Math.abs(adjustment.points).toString());
+    setAdjustReason(adjustment.reason);
+    setAdjustType(adjustment.points > 0 ? 'add' : 'deduct');
+    setShowEditDialog(true);
+  };
+
+  const openDeleteDialog = (adjustment: PointAdjustment) => {
+    setDeletingAdjustment(adjustment);
+    setShowDeleteDialog(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editingAdjustment || !onEditPointAdjustment) return;
+    
+    const points = parseInt(adjustPoints);
+    if (isNaN(points) || points <= 0) return;
+    if (!adjustReason.trim()) return;
+
+    setIsSubmitting(true);
+    const actualPoints = adjustType === 'add' ? points : -points;
+    const success = await onEditPointAdjustment(editingAdjustment.id, actualPoints, adjustReason.trim());
+    setIsSubmitting(false);
+    
+    if (success) {
+      setShowEditDialog(false);
+      setEditingAdjustment(null);
+      setAdjustPoints('');
+      setAdjustReason('');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingAdjustment || !onDeletePointAdjustment) return;
+    
+    setIsSubmitting(true);
+    const success = await onDeletePointAdjustment(deletingAdjustment.id);
+    setIsSubmitting(false);
+    
+    if (success) {
+      setShowDeleteDialog(false);
+      setDeletingAdjustment(null);
+    }
   };
 
   return (
@@ -167,21 +225,33 @@ export const PointManagement = ({ state, onBack, onAdjustPoints }: PointManageme
             </div>
 
             <TabsContent value="all" className="mt-0">
-              <AdjustmentList adjustments={state.pointAdjustments} />
+              <AdjustmentList 
+                adjustments={state.pointAdjustments} 
+                onEdit={onEditPointAdjustment ? openEditDialog : undefined}
+                onDelete={onDeletePointAdjustment ? openDeleteDialog : undefined}
+              />
             </TabsContent>
             
             <TabsContent value="add" className="mt-0">
-              <AdjustmentList adjustments={state.pointAdjustments.filter(a => a.points > 0)} />
+              <AdjustmentList 
+                adjustments={state.pointAdjustments.filter(a => a.points > 0)}
+                onEdit={onEditPointAdjustment ? openEditDialog : undefined}
+                onDelete={onDeletePointAdjustment ? openDeleteDialog : undefined}
+              />
             </TabsContent>
             
             <TabsContent value="deduct" className="mt-0">
-              <AdjustmentList adjustments={state.pointAdjustments.filter(a => a.points < 0)} />
+              <AdjustmentList 
+                adjustments={state.pointAdjustments.filter(a => a.points < 0)}
+                onEdit={onEditPointAdjustment ? openEditDialog : undefined}
+                onDelete={onDeletePointAdjustment ? openDeleteDialog : undefined}
+              />
             </TabsContent>
           </Tabs>
         </motion.div>
       </div>
 
-      {/* 调整积分对话框 */}
+      {/* 新增积分调整对话框 */}
       <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -248,12 +318,141 @@ export const PointManagement = ({ state, onBack, onAdjustPoints }: PointManageme
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 编辑积分调整对话框 */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-center flex items-center justify-center gap-2">
+              <Pencil className="w-6 h-6 text-blue-500" />
+              编辑调整记录
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-sm text-gray-600">调整类型</Label>
+              <div className="flex gap-2 mt-1">
+                <Button
+                  type="button"
+                  variant={adjustType === 'add' ? 'default' : 'outline'}
+                  className={adjustType === 'add' ? 'flex-1 bg-green-500 hover:bg-green-600' : 'flex-1'}
+                  onClick={() => setAdjustType('add')}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  加分
+                </Button>
+                <Button
+                  type="button"
+                  variant={adjustType === 'deduct' ? 'default' : 'outline'}
+                  className={adjustType === 'deduct' ? 'flex-1 bg-red-500 hover:bg-red-600' : 'flex-1'}
+                  onClick={() => setAdjustType('deduct')}
+                >
+                  <Minus className="w-4 h-4 mr-1" />
+                  扣分
+                </Button>
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm text-gray-600">积分数量</Label>
+              <Input
+                type="number"
+                min={1}
+                value={adjustPoints}
+                onChange={(e) => setAdjustPoints(e.target.value)}
+                placeholder="请输入积分数量"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm text-gray-600">原因说明</Label>
+              <Input
+                type="text"
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                placeholder="请输入原因说明"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowEditDialog(false)}
+              disabled={isSubmitting}
+            >
+              取消
+            </Button>
+            <Button
+              className="flex-1 bg-blue-500 hover:bg-blue-600"
+              onClick={handleEdit}
+              disabled={!adjustPoints || parseInt(adjustPoints) <= 0 || !adjustReason.trim() || isSubmitting}
+            >
+              {isSubmitting ? '保存中...' : '保存修改'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除确认对话框 */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-center flex items-center justify-center gap-2 text-red-600">
+              <AlertTriangle className="w-6 h-6" />
+              确认删除
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              确定要删除这条积分调整记录吗？此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          {deletingAdjustment && (
+            <div className="bg-gray-50 rounded-lg p-3 my-4">
+              <div className="flex items-center gap-2 mb-1">
+                {deletingAdjustment.points > 0 ? (
+                  <TrendingUp className="w-4 h-4 text-green-600" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                )}
+                <span className={`font-bold ${deletingAdjustment.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {deletingAdjustment.points > 0 ? '+' : ''}{deletingAdjustment.points}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600">{deletingAdjustment.reason}</p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={isSubmitting}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={handleDelete}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? '删除中...' : '确认删除'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 // 调整记录列表组件
-const AdjustmentList = ({ adjustments }: { adjustments: PointAdjustment[] }) => {
+interface AdjustmentListProps {
+  adjustments: PointAdjustment[];
+  onEdit?: (adjustment: PointAdjustment) => void;
+  onDelete?: (adjustment: PointAdjustment) => void;
+}
+
+const AdjustmentList = ({ adjustments, onEdit, onDelete }: AdjustmentListProps) => {
   if (adjustments.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
@@ -278,7 +477,7 @@ const AdjustmentList = ({ adjustments }: { adjustments: PointAdjustment[] }) => 
           }`}
         >
           <div className="flex items-start justify-between">
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 {adj.points > 0 ? (
                   <TrendingUp className="w-4 h-4 text-green-600" />
@@ -293,16 +492,42 @@ const AdjustmentList = ({ adjustments }: { adjustments: PointAdjustment[] }) => 
                   {adj.points > 0 ? '+' : ''}{adj.points}
                 </span>
               </div>
-              <p className="text-sm text-gray-700">{adj.reason}</p>
+              <p className="text-sm text-gray-700 truncate">{adj.reason}</p>
             </div>
-            <div className="flex items-center gap-1 text-xs text-gray-400">
-              <Calendar className="w-3 h-3" />
-              {new Date(adj.createdAt).toLocaleDateString('zh-CN', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
+            <div className="flex items-center gap-2 ml-2">
+              <div className="flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap">
+                <Calendar className="w-3 h-3" />
+                {new Date(adj.createdAt).toLocaleDateString('zh-CN', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </div>
+              {(onEdit || onDelete) && (
+                <div className="flex items-center gap-1 ml-1">
+                  {onEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-gray-400 hover:text-blue-500 hover:bg-blue-50"
+                      onClick={() => onEdit(adj)}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                      onClick={() => onDelete(adj)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </motion.div>

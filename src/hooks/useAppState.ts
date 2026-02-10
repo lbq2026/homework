@@ -348,6 +348,29 @@ export const useAppState = () => {
     return true;
   }, []);
 
+  // 编辑积分调整记录
+  const editPointAdjustment = useCallback((id: string, points: number, reason: string) => {
+    setState(prev => {
+      const newState = {
+        ...prev,
+        pointAdjustments: prev.pointAdjustments.map(adj =>
+          adj.id === id ? { ...adj, points, reason } : adj
+        ),
+      };
+      return newState;
+    });
+    return true;
+  }, []);
+
+  // 删除积分调整记录
+  const deletePointAdjustment = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      pointAdjustments: prev.pointAdjustments.filter(adj => adj.id !== id),
+    }));
+    return true;
+  }, []);
+
   // 重置今日记录
   const resetToday = useCallback(() => {
     setState(prev => resetTodayRecord(prev));
@@ -401,5 +424,7 @@ export const useAppState = () => {
     getTodayRecord,
     getStats,
     adjustPoints,
+    editPointAdjustment,
+    deletePointAdjustment,
   };
 };

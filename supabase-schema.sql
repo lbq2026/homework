@@ -217,6 +217,7 @@ CREATE POLICY "Users can create own badges"
 CREATE TABLE IF NOT EXISTS public.point_adjustments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     points INTEGER NOT NULL,  -- 正数为加分，负数为扣分
     reason TEXT NOT NULL      -- 调整原因说明
@@ -233,6 +234,14 @@ CREATE POLICY "Users can view own point adjustments"
 CREATE POLICY "Users can create own point adjustments"
     ON public.point_adjustments FOR INSERT
     WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own point adjustments"
+    ON public.point_adjustments FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own point adjustments"
+    ON public.point_adjustments FOR DELETE
+    USING (auth.uid() = user_id);
 
 -- ============================================
 -- 8. 创建触发器函数：自动更新 updated_at
@@ -260,6 +269,10 @@ CREATE TRIGGER update_daily_records_updated_at
 
 CREATE TRIGGER update_rewards_updated_at
     BEFORE UPDATE ON public.rewards
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_point_adjustments_updated_at
+    BEFORE UPDATE ON public.point_adjustments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
@@ -296,6 +309,8 @@ CREATE INDEX idx_rewards_user_id ON public.rewards(user_id);
 CREATE INDEX idx_redemptions_user_id ON public.redemptions(user_id);
 CREATE INDEX idx_badges_user_id ON public.badges(user_id);
 CREATE INDEX idx_profiles_parent_id ON public.profiles(parent_id);
+CREATE INDEX idx_point_adjustments_user_id ON public.point_adjustments(user_id);
+CREATE INDEX idx_point_adjustments_created_at ON public.point_adjustments(created_at);
 
 -- ============================================
 -- 10. 插入默认徽章定义（可选）

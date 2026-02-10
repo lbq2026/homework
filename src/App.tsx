@@ -177,6 +177,20 @@ function AppContent() {
               }
               return success ?? false;
             }}
+            onEditPointAdjustment={async (id, points, reason) => {
+              const success = await localState.editPointAdjustment(id, points, reason);
+              if (success) {
+                toast.success('修改成功！');
+              }
+              return success ?? false;
+            }}
+            onDeletePointAdjustment={async (id) => {
+              const success = await localState.deletePointAdjustment(id);
+              if (success) {
+                toast.success('删除成功！');
+              }
+              return success ?? false;
+            }}
           />
         );
       default:

@@ -192,8 +192,8 @@ export const calculateTotalPoints = (state: AppState): number => {
     return sum + (red.points || 0);
   }, 0);
   
-  // 总积分 = 作业积分 + 调整积分 - 兑换消耗
-  return Math.max(0, dailyRecordPoints + adjustmentPoints - redemptionPoints);
+  // 总积分 = 作业积分 + 调整积分 - 兑换消耗（允许负数）
+  return dailyRecordPoints + adjustmentPoints - redemptionPoints;
 };
 
 // 检查并解锁徽章
