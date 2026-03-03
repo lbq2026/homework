@@ -14,6 +14,7 @@ import {
   getCategoryStats,
   getTotalCompletedTasks,
   calculateTotalPoints,
+  validateAndFixBadgeState,
 } from '@/utils/storage';
 import { playSuccessSound, playPointSound, playBadgeSound, playRedeemSound } from '@/utils/sound';
 
@@ -53,12 +54,12 @@ const mergeBadges = (localBadges: Badge[], serverBadges: { badge_type: string; u
   return DEFAULT_BADGES.map(defaultBadge => {
     const localBadge = localBadges.find(b => b.id === defaultBadge.id);
     const serverBadge = serverBadges.find(b => b.badge_type === defaultBadge.id);
-    
+
     // 优先使用服务器数据，其次是本地数据
-    const unlockedAt = serverBadge 
+    const unlockedAt = serverBadge
       ? new Date(serverBadge.unlocked_at).getTime()
       : localBadge?.unlockedAt;
-    
+
     return {
       ...defaultBadge,
       unlockedAt,
@@ -72,7 +73,7 @@ export const useSyncedAppState = () => {
   const [newlyUnlockedBadges, setNewlyUnlockedBadges] = useState<BadgeType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  
+
   // 使用 ref 来跟踪当前加载的用户ID，用于检测用户切换
   const currentUserId = useRef<string | null>(null);
   const isOnline = isSupabaseConfigured();
@@ -80,10 +81,10 @@ export const useSyncedAppState = () => {
   // 从 Supabase 加载用户数据
   const loadUserDataFromSupabase = useCallback(async (userId: string) => {
     if (!userId || !isOnline) return null;
-    
+
     try {
       setIsSyncing(true);
-      
+
       // 并行获取所有数据
       const [tasksRes, rewardsRes, recordsRes, redemptionsRes, badgesRes, profileRes, adjustmentsRes] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', userId).eq('is_active', true),
@@ -145,7 +146,7 @@ export const useSyncedAppState = () => {
 
       // 获取总积分，如果 profile 不存在则自动创建
       let totalPoints = profileRes.data?.total_points || 0;
-      
+
       if (!profileRes.data) {
         // Profile 不存在，尝试创建
         try {
@@ -181,14 +182,14 @@ export const useSyncedAppState = () => {
   // 同步数据到 Supabase
   const syncToSupabase = useCallback(async (newState: AppState) => {
     if (!user?.id || !isOnline) return;
-    
+
     try {
       setIsSyncing(true);
-      
+
       // 同步今日记录到 Supabase
       const today = new Date().toISOString().split('T')[0];
       const todayRecord = newState.dailyRecords.find(r => r.date === today);
-      
+
       if (todayRecord) {
         await supabase.from('daily_records').upsert({
           user_id: user.id,
@@ -197,14 +198,14 @@ export const useSyncedAppState = () => {
           total_points: todayRecord.totalPoints,
         }, { onConflict: 'user_id,date' });
       }
-      
+
       // 实时计算并同步总积分
       const calculatedPoints = calculateTotalPoints(newState);
-      await supabase.from('profiles').update({ 
+      await supabase.from('profiles').update({
         total_points: calculatedPoints,
         updated_at: new Date().toISOString()
       }).eq('id', user.id);
-      
+
     } catch (error) {
       console.error('Failed to sync to Supabase:', error);
     } finally {
@@ -216,23 +217,23 @@ export const useSyncedAppState = () => {
   useEffect(() => {
     const initializeData = async () => {
       setIsLoading(true);
-      
+
       // 检测用户是否切换
       const userChanged = currentUserId.current !== (user?.id || null);
       currentUserId.current = user?.id || null;
-      
+
       if (user?.id && isOnline) {
         // 用户已登录，从 Supabase 加载数据
         const serverData = await loadUserDataFromSupabase(user.id);
-        
+
         if (serverData) {
           // 如果用户切换了或者是新设备（本地数据不是当前用户的），优先使用服务器数据
           const localData = loadState();
-          
+
           // 检查本地数据是否属于当前用户（通过检查任务中是否有当前用户的任务）
           // 由于本地存储没有用户标识，我们假设如果是用户切换，应该优先使用服务器数据
           const isNewDeviceOrUserSwitch = userChanged;
-          
+
           if (isNewDeviceOrUserSwitch) {
             // 新设备或用户切换：使用服务器数据，但保留本地设置
             const newState = {
@@ -246,7 +247,28 @@ export const useSyncedAppState = () => {
             };
             // 重新计算总积分
             newState.totalPoints = calculateTotalPoints(newState);
-            setState(newState);
+
+            // 验证并修复徽章状态
+            const validatedState = validateAndFixBadgeState(newState);
+
+            // 检查是否有新解锁的徽章需要显示
+            const newlyUnlocked = validatedState.badges.filter((b, i) =>
+              b.unlockedAt && !newState.badges[i]?.unlockedAt
+            ).map(b => b.id);
+
+            if (newlyUnlocked.length > 0) {
+              setNewlyUnlockedBadges(newlyUnlocked as BadgeType[]);
+
+              // 同步新解锁的徽章到 Supabase
+              newlyUnlocked.forEach(async (badgeType) => {
+                await supabase.from('badges').upsert({
+                  user_id: user.id,
+                  badge_type: badgeType,
+                }, { onConflict: 'user_id,badge_type' });
+              });
+            }
+
+            setState(validatedState);
           } else {
             // 同一用户：合并本地和服务器数据（服务器数据优先）
             const newState = {
@@ -259,21 +281,68 @@ export const useSyncedAppState = () => {
             };
             // 重新计算总积分
             newState.totalPoints = calculateTotalPoints(newState);
-            setState(newState);
+
+            // 验证并修复徽章状态
+            const validatedState = validateAndFixBadgeState(newState);
+
+            // 检查是否有新解锁的徽章需要显示
+            const newlyUnlocked = validatedState.badges.filter((b, i) =>
+              b.unlockedAt && !newState.badges[i]?.unlockedAt
+            ).map(b => b.id);
+
+            if (newlyUnlocked.length > 0) {
+              setNewlyUnlockedBadges(newlyUnlocked as BadgeType[]);
+
+              // 同步新解锁的徽章到 Supabase
+              newlyUnlocked.forEach(async (badgeType) => {
+                await supabase.from('badges').upsert({
+                  user_id: user.id,
+                  badge_type: badgeType,
+                }, { onConflict: 'user_id,badge_type' });
+              });
+            }
+
+            setState(validatedState);
           }
         } else {
           // 服务器数据加载失败，使用本地数据并重新计算积分
           const localData = loadState();
           localData.totalPoints = calculateTotalPoints(localData);
-          setState(localData);
+
+          // 验证并修复徽章状态
+          const validatedState = validateAndFixBadgeState(localData);
+
+          // 检查是否有新解锁的徽章需要显示
+          const newlyUnlocked = validatedState.badges.filter((b, i) =>
+            b.unlockedAt && !localData.badges[i]?.unlockedAt
+          ).map(b => b.id);
+
+          if (newlyUnlocked.length > 0) {
+            setNewlyUnlockedBadges(newlyUnlocked as BadgeType[]);
+          }
+
+          setState(validatedState);
         }
       } else {
         // 未登录，使用本地数据并重新计算积分
         const localData = loadState();
         localData.totalPoints = calculateTotalPoints(localData);
-        setState(localData);
+
+        // 验证并修复徽章状态
+        const validatedState = validateAndFixBadgeState(localData);
+
+        // 检查是否有新解锁的徽章需要显示
+        const newlyUnlocked = validatedState.badges.filter((b, i) =>
+          b.unlockedAt && !localData.badges[i]?.unlockedAt
+        ).map(b => b.id);
+
+        if (newlyUnlocked.length > 0) {
+          setNewlyUnlockedBadges(newlyUnlocked as BadgeType[]);
+        }
+
+        setState(validatedState);
       }
-      
+
       setIsLoading(false);
     };
 
@@ -308,12 +377,12 @@ export const useSyncedAppState = () => {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
     };
-    
+
     setState(prev => ({
       ...prev,
       tasks: [...prev.tasks, newTask],
     }));
-    
+
     // 如果已登录，同步到 Supabase
     if (user?.id && isOnline) {
       try {
@@ -329,7 +398,7 @@ export const useSyncedAppState = () => {
         console.error('Failed to add task to Supabase:', error);
       }
     }
-    
+
     return newTask.id;
   }, [user, isOnline]);
 
@@ -339,7 +408,7 @@ export const useSyncedAppState = () => {
       ...prev,
       tasks: prev.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t),
     }));
-    
+
     if (user?.id && isOnline) {
       try {
         await supabase.from('tasks').update({
@@ -361,7 +430,7 @@ export const useSyncedAppState = () => {
       ...prev,
       tasks: prev.tasks.filter(t => t.id !== taskId),
     }));
-    
+
     if (user?.id && isOnline) {
       try {
         await supabase.from('tasks').update({ is_active: false }).eq('id', taskId);
@@ -392,10 +461,10 @@ export const useSyncedAppState = () => {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
-      
+
       // 同步到 Supabase
       syncToSupabase(newState);
-      
+
       return newState;
     });
   }, [syncToSupabase]);
@@ -406,7 +475,7 @@ export const useSyncedAppState = () => {
     setState(prev => {
       const record = prev.dailyRecords.find(r => r.date === today);
       if (!record) return prev;
-      
+
       // 检查被移除的任务是否已完成，如果已完成需要扣除积分
       const taskToRemove = record.tasks.find(t => t.taskId === taskId);
       let pointsToDeduct = 0;
@@ -414,7 +483,7 @@ export const useSyncedAppState = () => {
         const taskDef = prev.tasks.find(t => t.id === taskId);
         pointsToDeduct = taskDef?.basePoints || 1;
       }
-      
+
       const newRecord = {
         ...record,
         tasks: record.tasks.filter(t => t.taskId !== taskId),
@@ -425,10 +494,10 @@ export const useSyncedAppState = () => {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
-      
+
       // 实时计算新的总积分
       newState.totalPoints = calculateTotalPoints(newState);
-      
+
       // 同步到 Supabase（包含今日记录和总积分）
       if (user?.id && isOnline) {
         Promise.all([
@@ -440,7 +509,7 @@ export const useSyncedAppState = () => {
             total_points: newRecord.totalPoints,
           }, { onConflict: 'user_id,date' }),
           // 实时同步更新后的总积分
-          supabase.from('profiles').update({ 
+          supabase.from('profiles').update({
             total_points: newState.totalPoints,
             updated_at: new Date().toISOString()
           }).eq('id', user.id),
@@ -448,7 +517,7 @@ export const useSyncedAppState = () => {
           console.error('Failed to sync remove task from today:', error);
         });
       }
-      
+
       return newState;
     });
   }, [user, isOnline]);
@@ -459,41 +528,41 @@ export const useSyncedAppState = () => {
     setState(prev => {
       const record = prev.dailyRecords.find(r => r.date === today);
       if (!record) return prev;
-      
+
       const task = record.tasks.find(t => t.taskId === taskId);
       if (!task) return prev;
-      
+
       const taskDef = prev.tasks.find(t => t.id === taskId);
       const points = taskDef?.basePoints || 1;
-      
+
       const newCompleted = !task.completed;
       const newRecord = {
         ...record,
-        tasks: record.tasks.map(t => 
-          t.taskId === taskId 
+        tasks: record.tasks.map(t =>
+          t.taskId === taskId
             ? { ...t, completed: newCompleted, completedAt: newCompleted ? Date.now() : undefined }
             : t
         ),
-        totalPoints: newCompleted 
-          ? record.totalPoints + points 
+        totalPoints: newCompleted
+          ? record.totalPoints + points
           : record.totalPoints - points,
       };
-      
+
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
-      
+
       // 计算新的总积分
       newState.totalPoints = calculateTotalPoints(newState);
-      
+
       // 播放音效
       if (newCompleted) {
         playSuccessSound(prev.settings.soundEnabled);
         playPointSound(prev.settings.soundEnabled);
       }
-      
+
       // 检查徽章解锁
       const unlocked = checkAndUnlockBadges(newState);
       if (unlocked.length > 0) {
@@ -502,11 +571,11 @@ export const useSyncedAppState = () => {
         const now = Date.now();
         newState = {
           ...newState,
-          badges: newState.badges.map(b => 
+          badges: newState.badges.map(b =>
             unlocked.includes(b.id) ? { ...b, unlockedAt: now } : b
           ),
         };
-        
+
         // 同步徽章到 Supabase
         if (user?.id && isOnline) {
           unlocked.forEach(async (badgeType) => {
@@ -517,7 +586,7 @@ export const useSyncedAppState = () => {
           });
         }
       }
-      
+
       // 同步到 Supabase（包含今日记录和总积分）
       if (user?.id && isOnline) {
         Promise.all([
@@ -529,7 +598,7 @@ export const useSyncedAppState = () => {
             total_points: newRecord.totalPoints,
           }, { onConflict: 'user_id,date' }),
           // 实时同步更新后的总积分
-          supabase.from('profiles').update({ 
+          supabase.from('profiles').update({
             total_points: newState.totalPoints,
             updated_at: new Date().toISOString()
           }).eq('id', user.id),
@@ -537,7 +606,7 @@ export const useSyncedAppState = () => {
           console.error('Failed to sync task completion:', error);
         });
       }
-      
+
       return newState;
     });
   }, [user, isOnline]);
@@ -548,13 +617,13 @@ export const useSyncedAppState = () => {
     setState(prev => {
       const record = prev.dailyRecords.find(r => r.date === today);
       if (!record) return prev;
-      
+
       const incompleteTasks = record.tasks.filter(t => !t.completed);
       if (incompleteTasks.length === 0) return prev;
-      
+
       let additionalPoints = 0;
       const now = Date.now();
-      
+
       const newTasks = record.tasks.map(t => {
         if (!t.completed) {
           const taskDef = prev.tasks.find(task => task.id === t.taskId);
@@ -563,24 +632,24 @@ export const useSyncedAppState = () => {
         }
         return t;
       });
-      
+
       const newRecord = {
         ...record,
         tasks: newTasks,
         totalPoints: record.totalPoints + additionalPoints,
       };
-      
+
       const existingRecords = prev.dailyRecords.filter(r => r.date !== today);
       let newState = {
         ...prev,
         dailyRecords: [...existingRecords, newRecord],
       };
-      
+
       // 计算新的总积分
       newState.totalPoints = calculateTotalPoints(newState);
-      
+
       playSuccessSound(prev.settings.soundEnabled);
-      
+
       // 检查徽章解锁
       const unlocked = checkAndUnlockBadges(newState);
       if (unlocked.length > 0) {
@@ -588,11 +657,11 @@ export const useSyncedAppState = () => {
         setNewlyUnlockedBadges(unlocked);
         newState = {
           ...newState,
-          badges: newState.badges.map(b => 
+          badges: newState.badges.map(b =>
             unlocked.includes(b.id) ? { ...b, unlockedAt: Date.now() } : b
           ),
         };
-        
+
         // 同步徽章到 Supabase
         if (user?.id && isOnline) {
           unlocked.forEach(async (badgeType) => {
@@ -603,7 +672,7 @@ export const useSyncedAppState = () => {
           });
         }
       }
-      
+
       // 同步到 Supabase（包含今日记录和总积分）
       if (user?.id && isOnline) {
         Promise.all([
@@ -615,7 +684,7 @@ export const useSyncedAppState = () => {
             total_points: newRecord.totalPoints,
           }, { onConflict: 'user_id,date' }),
           // 实时同步更新后的总积分
-          supabase.from('profiles').update({ 
+          supabase.from('profiles').update({
             total_points: newState.totalPoints,
             updated_at: new Date().toISOString()
           }).eq('id', user.id),
@@ -623,7 +692,7 @@ export const useSyncedAppState = () => {
           console.error('Failed to sync complete all tasks:', error);
         });
       }
-      
+
       return newState;
     });
   }, [user, isOnline]);
@@ -635,12 +704,12 @@ export const useSyncedAppState = () => {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
     };
-    
+
     setState(prev => ({
       ...prev,
       rewards: [...prev.rewards, newReward],
     }));
-    
+
     if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').insert({
@@ -656,7 +725,7 @@ export const useSyncedAppState = () => {
         console.error('Failed to add reward to Supabase:', error);
       }
     }
-    
+
     return newReward.id;
   }, [user, isOnline]);
 
@@ -666,7 +735,7 @@ export const useSyncedAppState = () => {
       ...prev,
       rewards: prev.rewards.map(r => r.id === rewardId ? { ...r, ...updates } : r),
     }));
-    
+
     if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').update({
@@ -689,7 +758,7 @@ export const useSyncedAppState = () => {
       ...prev,
       rewards: prev.rewards.filter(r => r.id !== rewardId),
     }));
-    
+
     if (user?.id && isOnline) {
       try {
         await supabase.from('rewards').update({ is_active: false }).eq('id', rewardId);
@@ -702,9 +771,9 @@ export const useSyncedAppState = () => {
   // 兑换奖品
   const redeemReward = useCallback(async (reward: Reward) => {
     const currentState = state;
-    
+
     if (currentState.totalPoints < reward.points) return false;
-    
+
     const redemption: Redemption = {
       id: crypto.randomUUID(),
       rewardId: reward.id,
@@ -712,38 +781,38 @@ export const useSyncedAppState = () => {
       points: reward.points,
       redeemedAt: Date.now(),
     };
-    
+
     // 计算新的兑换记录列表
     const newRedemptions = [redemption, ...currentState.redemptions];
-    
+
     // 实时计算新的总积分
     const dailyRecordPoints = currentState.dailyRecords.reduce((sum, record) => sum + (record.totalPoints || 0), 0);
     const adjustmentPoints = currentState.pointAdjustments.reduce((sum, adj) => sum + (adj.points || 0), 0);
     const redemptionPoints = newRedemptions.reduce((sum, red) => sum + (red.points || 0), 0);
     const newTotalPoints = dailyRecordPoints + adjustmentPoints - redemptionPoints;
-    
+
     // 构建新状态
     const newState: AppState = {
       ...currentState,
       redemptions: newRedemptions,
       totalPoints: newTotalPoints,
     };
-    
+
     playRedeemSound(currentState.settings.soundEnabled);
-    
+
     // 检查首次兑换徽章
     const unlocked = checkAndUnlockBadges(newState);
     if (unlocked.length > 0) {
       playBadgeSound(currentState.settings.soundEnabled);
       setNewlyUnlockedBadges(prev => [...prev, ...unlocked]);
-      newState.badges = newState.badges.map(b => 
+      newState.badges = newState.badges.map(b =>
         unlocked.includes(b.id) ? { ...b, unlockedAt: Date.now() } : b
       );
     }
-    
+
     // 更新本地状态
     setState(newState);
-    
+
     // 同步到 Supabase
     if (user?.id && isOnline) {
       try {
@@ -757,7 +826,7 @@ export const useSyncedAppState = () => {
         console.error('Failed to redeem reward in Supabase:', error);
       }
     }
-    
+
     return true;
   }, [state, user, isOnline]);
 
@@ -791,7 +860,7 @@ export const useSyncedAppState = () => {
   const resetAll = useCallback(async () => {
     const initial = getInitialState();
     setState(initial);
-    
+
     // 如果已登录，清空 Supabase 数据
     if (user?.id && isOnline) {
       try {
@@ -812,14 +881,14 @@ export const useSyncedAppState = () => {
   // 手动调整积分（加分或扣分）
   const adjustPoints = useCallback(async (points: number, reason: string) => {
     if (!user?.id) return false;
-    
+
     const adjustment: PointAdjustment = {
       id: crypto.randomUUID(),
       points,
       reason,
       createdAt: Date.now(),
     };
-    
+
     // 1. 先同步到 Supabase
     if (isOnline) {
       try {
@@ -830,29 +899,29 @@ export const useSyncedAppState = () => {
           points: adjustment.points,
           reason: adjustment.reason,
         });
-        
+
         if (insertError) {
           console.error('Failed to insert point adjustment:', insertError);
           return false;
         }
-        
+
         // 从数据库重新计算总积分
         const [{ data: recordsData }, { data: adjustmentsData }, { data: redemptionsData }] = await Promise.all([
           supabase.from('daily_records').select('total_points').eq('user_id', user.id),
           supabase.from('point_adjustments').select('points').eq('user_id', user.id),
           supabase.from('redemptions').select('points').eq('user_id', user.id),
         ]);
-        
+
         const dailyRecordSum = (recordsData || []).reduce((sum, r) => sum + (r.total_points || 0), 0);
         const adjustmentSum = (adjustmentsData || []).reduce((sum, a) => sum + (a.points || 0), 0);
         const redemptionSum = (redemptionsData || []).reduce((sum, r) => sum + (r.points || 0), 0);
         const calculatedTotal = dailyRecordSum + adjustmentSum - redemptionSum;
-        
+
         // 更新总积分到数据库
         const { error: updateError } = await supabase.from('profiles')
           .update({ total_points: calculatedTotal, updated_at: new Date().toISOString() })
           .eq('id', user.id);
-        
+
         if (updateError) {
           console.error('Failed to update profile total_points:', updateError);
         }
@@ -861,30 +930,30 @@ export const useSyncedAppState = () => {
         return false;
       }
     }
-    
+
     // 2. 数据库更新成功后，再更新本地状态
     setState(prev => {
       // 计算新的调整记录列表
       const newAdjustments = [adjustment, ...prev.pointAdjustments];
-      
+
       // 实时计算新的总积分
       const dailyRecordPoints = prev.dailyRecords.reduce((sum, record) => sum + (record.totalPoints || 0), 0);
       const adjustmentPoints = newAdjustments.reduce((sum, adj) => sum + (adj.points || 0), 0);
       const redemptionPoints = prev.redemptions.reduce((sum, red) => sum + (red.points || 0), 0);
       const newTotalPoints = dailyRecordPoints + adjustmentPoints - redemptionPoints;
-      
+
       // 构建新状态
       let newState: AppState = {
         ...prev,
         pointAdjustments: newAdjustments,
         totalPoints: newTotalPoints,
       };
-      
+
       // 播放音效
       if (points > 0) {
         playPointSound(newState.settings.soundEnabled);
       }
-      
+
       // 检查徽章解锁（加分时）
       if (points > 0) {
         const newlyUnlocked = checkAndUnlockBadges(newState);
@@ -893,23 +962,23 @@ export const useSyncedAppState = () => {
           playBadgeSound(newState.settings.soundEnabled);
           newState = {
             ...newState,
-            badges: newState.badges.map(b => 
+            badges: newState.badges.map(b =>
               newlyUnlocked.includes(b.id) ? { ...b, unlockedAt: Date.now() } : b
             ),
           };
         }
       }
-      
+
       return newState;
     });
-    
+
     return true;
   }, [user, isOnline]);
 
   // 编辑积分调整记录
   const editPointAdjustment = useCallback(async (id: string, points: number, reason: string) => {
     if (!user?.id) return false;
-    
+
     // 1. 先同步到 Supabase
     if (isOnline) {
       try {
@@ -918,29 +987,29 @@ export const useSyncedAppState = () => {
           .update({ points, reason, updated_at: new Date().toISOString() })
           .eq('id', id)
           .eq('user_id', user.id);
-        
+
         if (updateError) {
           console.error('Failed to update point adjustment:', updateError);
           return false;
         }
-        
+
         // 从数据库重新计算总积分
         const [{ data: recordsData }, { data: adjustmentsData }, { data: redemptionsData }] = await Promise.all([
           supabase.from('daily_records').select('total_points').eq('user_id', user.id),
           supabase.from('point_adjustments').select('points').eq('user_id', user.id),
           supabase.from('redemptions').select('points').eq('user_id', user.id),
         ]);
-        
+
         const dailyRecordSum = (recordsData || []).reduce((sum, r) => sum + (r.total_points || 0), 0);
         const adjustmentSum = (adjustmentsData || []).reduce((sum, a) => sum + (a.points || 0), 0);
         const redemptionSum = (redemptionsData || []).reduce((sum, r) => sum + (r.points || 0), 0);
         const calculatedTotal = dailyRecordSum + adjustmentSum - redemptionSum;
-        
+
         // 更新总积分到数据库
         const { error: profileError } = await supabase.from('profiles')
           .update({ total_points: calculatedTotal, updated_at: new Date().toISOString() })
           .eq('id', user.id);
-        
+
         if (profileError) {
           console.error('Failed to update profile total_points:', profileError);
         }
@@ -949,27 +1018,27 @@ export const useSyncedAppState = () => {
         return false;
       }
     }
-    
+
     // 2. 数据库更新成功后，再更新本地状态
     setState(prev => {
       // 计算新的调整记录列表
       const newAdjustments = prev.pointAdjustments.map(adj =>
         adj.id === id ? { ...adj, points, reason } : adj
       );
-      
+
       // 实时计算新的总积分
       const dailyRecordPoints = prev.dailyRecords.reduce((sum, record) => sum + (record.totalPoints || 0), 0);
       const adjustmentPoints = newAdjustments.reduce((sum, adj) => sum + (adj.points || 0), 0);
       const redemptionPoints = prev.redemptions.reduce((sum, red) => sum + (red.points || 0), 0);
       const newTotalPoints = dailyRecordPoints + adjustmentPoints - redemptionPoints;
-      
+
       // 构建新状态
       const newState: AppState = {
         ...prev,
         pointAdjustments: newAdjustments,
         totalPoints: newTotalPoints,
       };
-      
+
       return newState;
     });
 
@@ -979,7 +1048,7 @@ export const useSyncedAppState = () => {
   // 删除积分调整记录
   const deletePointAdjustment = useCallback(async (id: string) => {
     if (!user?.id) return false;
-    
+
     // 1. 先同步到 Supabase
     if (isOnline) {
       try {
@@ -988,29 +1057,29 @@ export const useSyncedAppState = () => {
           .delete()
           .eq('id', id)
           .eq('user_id', user.id);
-        
+
         if (deleteError) {
           console.error('Delete error:', deleteError);
           return false;
         }
-        
+
         // 从数据库重新计算总积分
         const [{ data: recordsData }, { data: adjustmentsData }, { data: redemptionsData }] = await Promise.all([
           supabase.from('daily_records').select('total_points').eq('user_id', user.id),
           supabase.from('point_adjustments').select('points').eq('user_id', user.id),
           supabase.from('redemptions').select('points').eq('user_id', user.id),
         ]);
-        
+
         const dailyRecordSum = (recordsData || []).reduce((sum, r) => sum + (r.total_points || 0), 0);
         const adjustmentSum = (adjustmentsData || []).reduce((sum, a) => sum + (a.points || 0), 0);
         const redemptionSum = (redemptionsData || []).reduce((sum, r) => sum + (r.points || 0), 0);
         const calculatedTotal = dailyRecordSum + adjustmentSum - redemptionSum;
-        
+
         // 更新总积分到数据库
         const { error: profileError } = await supabase.from('profiles')
           .update({ total_points: calculatedTotal, updated_at: new Date().toISOString() })
           .eq('id', user.id);
-        
+
         if (profileError) {
           console.error('Failed to update profile total_points:', profileError);
         }
@@ -1019,25 +1088,25 @@ export const useSyncedAppState = () => {
         return false;
       }
     }
-    
+
     // 2. 数据库删除成功后，再更新本地状态
     setState(prev => {
       // 计算新的调整记录列表
       const newAdjustments = prev.pointAdjustments.filter(adj => adj.id !== id);
-      
+
       // 实时计算新的总积分
       const dailyRecordPoints = prev.dailyRecords.reduce((sum, record) => sum + (record.totalPoints || 0), 0);
       const adjustmentPoints = newAdjustments.reduce((sum, adj) => sum + (adj.points || 0), 0);
       const redemptionPoints = prev.redemptions.reduce((sum, red) => sum + (red.points || 0), 0);
       const newTotalPoints = dailyRecordPoints + adjustmentPoints - redemptionPoints;
-      
+
       // 构建新状态
       const newState: AppState = {
         ...prev,
         pointAdjustments: newAdjustments,
         totalPoints: newTotalPoints,
       };
-      
+
       return newState;
     });
 
@@ -1077,7 +1146,7 @@ export const useSyncedAppState = () => {
   // 手动刷新数据（用于强制同步）
   const refreshData = useCallback(async () => {
     if (!user?.id) return;
-    
+
     setIsLoading(true);
     const serverData = await loadUserDataFromSupabase(user.id);
     if (serverData) {

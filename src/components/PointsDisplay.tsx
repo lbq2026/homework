@@ -5,12 +5,14 @@ interface PointsDisplayProps {
   points: number;
   size?: 'sm' | 'md' | 'lg';
   showAnimation?: boolean;
+  variant?: 'gradient' | 'solid';
 }
 
 export const PointsDisplay = ({ 
   points, 
   size = 'md',
-  showAnimation = true 
+  showAnimation = true,
+  variant = 'gradient'
 }: PointsDisplayProps) => {
   const [displayPoints, setDisplayPoints] = useState(points);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -44,7 +46,7 @@ export const PointsDisplay = ({
       <AnimatePresence mode="wait">
         <motion.span
           key={displayPoints}
-          className={`${sizeClasses[size]} font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent`}
+          className={`${sizeClasses[size]} font-bold ${variant === 'solid' ? 'text-white drop-shadow-md' : 'bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent'}`}
           initial={showAnimation ? { scale: 0.8, opacity: 0 } : false}
           animate={{ 
             scale: isAnimating && showAnimation ? [1, 1.2, 1] : 1, 

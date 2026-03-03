@@ -122,19 +122,19 @@ export const calculateStreak = (state: AppState): number => {
   const sortedRecords = [...state.dailyRecords]
     .filter(r => r.tasks.length > 0 && r.tasks.every(t => t.completed))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
+
   if (sortedRecords.length === 0) return 0;
-  
+
   let streak = 0;
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  
+
   // 检查今天或昨天是否有完成记录
   const latestRecord = sortedRecords[0];
   if (latestRecord.date !== today && latestRecord.date !== yesterday) {
     return 0;
   }
-  
+
   // 计算连续天数
   let currentDate = new Date(latestRecord.date);
   for (const record of sortedRecords) {
@@ -146,14 +146,14 @@ export const calculateStreak = (state: AppState): number => {
       break;
     }
   }
-  
+
   return streak;
 };
 
 // 计算各类作业完成次数
 export const getCategoryStats = (state: AppState): Record<string, number> => {
   const stats: Record<string, number> = { study: 0, sport: 0, art: 0, other: 0 };
-  
+
   state.dailyRecords.forEach(record => {
     record.tasks.forEach(task => {
       if (task.completed) {
@@ -164,7 +164,7 @@ export const getCategoryStats = (state: AppState): Record<string, number> => {
       }
     });
   });
-  
+
   return stats;
 };
 
@@ -175,23 +175,44 @@ export const getTotalCompletedTasks = (state: AppState): number => {
   }, 0);
 };
 
+// 计算累计获得积分（作业完成积分 + 积分调整中的加分，不包括扣分和兑换消耗）
+export const calculateCumulativeEarnedPoints = (state: AppState): number => {
+  // 1. 计算所有每日记录中获得的积分（作业完成）
+  const dailyRecordPoints = state.dailyRecords.reduce((sum, record) => {
+    return sum + (record.totalPoints || 0);
+  }, 0);
+
+  // 2. 计算积分调整中的加分（只算正数）
+  const positiveAdjustmentPoints = state.pointAdjustments.reduce((sum, adj) => {
+    return sum + Math.max(0, adj.points || 0);
+  }, 0);
+
+  const total = dailyRecordPoints + positiveAdjustmentPoints;
+  console.log('calculateCumulativeEarnedPoints:', { dailyRecordPoints, positiveAdjustmentPoints, total });
+  console.log('state.dailyRecords:', state.dailyRecords);
+  console.log('state.pointAdjustments:', state.pointAdjustments);
+
+  // 累计获得积分 = 作业积分 + 加分调整
+  return total;
+};
+
 // 计算总积分（作业完成积分 + 积分调整 - 兑换消耗）
 export const calculateTotalPoints = (state: AppState): number => {
   // 1. 计算所有每日记录中获得的积分（作业完成）
   const dailyRecordPoints = state.dailyRecords.reduce((sum, record) => {
     return sum + (record.totalPoints || 0);
   }, 0);
-  
+
   // 2. 计算积分调整（手动加减分）
   const adjustmentPoints = state.pointAdjustments.reduce((sum, adj) => {
     return sum + (adj.points || 0);
   }, 0);
-  
+
   // 3. 计算兑换奖品消耗的积分
   const redemptionPoints = state.redemptions.reduce((sum, red) => {
     return sum + (red.points || 0);
   }, 0);
-  
+
   // 总积分 = 作业积分 + 调整积分 - 兑换消耗（允许负数）
   return dailyRecordPoints + adjustmentPoints - redemptionPoints;
 };
@@ -202,7 +223,13 @@ export const checkAndUnlockBadges = (state: AppState): BadgeType[] => {
   const streak = calculateStreak(state);
   const categoryStats = getCategoryStats(state);
   const totalTasks = getTotalCompletedTasks(state);
-  
+  const cumulativeEarnedPoints = calculateCumulativeEarnedPoints(state);
+
+  console.log('checkAndUnlockBadges called with:', {
+    cumulativeEarnedPoints,
+    currentBadges: state.badges.map(b => ({ id: b.id, unlockedAt: b.unlockedAt }))
+  });
+
   // 检查连续完成徽章
   if (streak >= 3 && !state.badges.find(b => b.id === 'streak_3')?.unlockedAt) {
     newlyUnlocked.push('streak_3');
@@ -213,7 +240,7 @@ export const checkAndUnlockBadges = (state: AppState): BadgeType[] => {
   if (streak >= 15 && !state.badges.find(b => b.id === 'streak_15')?.unlockedAt) {
     newlyUnlocked.push('streak_15');
   }
-  
+
   // 检查类别徽章
   if (categoryStats.sport >= 20 && !state.badges.find(b => b.id === 'sport_master')?.unlockedAt) {
     newlyUnlocked.push('sport_master');
@@ -224,30 +251,107 @@ export const checkAndUnlockBadges = (state: AppState): BadgeType[] => {
   if (categoryStats.art >= 15 && !state.badges.find(b => b.id === 'art_master')?.unlockedAt) {
     newlyUnlocked.push('art_master');
   }
-  
-  // 检查积分徽章
-  if (state.totalPoints >= 50 && !state.badges.find(b => b.id === 'points_50')?.unlockedAt) {
+
+  // 检查积分徽章（使用累计获得积分）
+  console.log('Checking points badges: cumulativeEarnedPoints =', cumulativeEarnedPoints);
+  if (cumulativeEarnedPoints >= 50 && !state.badges.find(b => b.id === 'points_50')?.unlockedAt) {
+    console.log('Unlocking points_50 badge');
     newlyUnlocked.push('points_50');
   }
-  if (state.totalPoints >= 100 && !state.badges.find(b => b.id === 'points_100')?.unlockedAt) {
+  if (cumulativeEarnedPoints >= 100 && !state.badges.find(b => b.id === 'points_100')?.unlockedAt) {
+    console.log('Unlocking points_100 badge');
     newlyUnlocked.push('points_100');
   }
-  if (state.totalPoints >= 200 && !state.badges.find(b => b.id === 'points_200')?.unlockedAt) {
+  if (cumulativeEarnedPoints >= 200 && !state.badges.find(b => b.id === 'points_200')?.unlockedAt) {
+    console.log('Unlocking points_200 badge');
     newlyUnlocked.push('points_200');
   }
-  if (state.totalPoints >= 500 && !state.badges.find(b => b.id === 'points_500')?.unlockedAt) {
+  if (cumulativeEarnedPoints >= 500 && !state.badges.find(b => b.id === 'points_500')?.unlockedAt) {
+    console.log('Unlocking points_500 badge');
     newlyUnlocked.push('points_500');
   }
-  
+
   // 检查任务大师徽章
   if (totalTasks >= 100 && !state.badges.find(b => b.id === 'task_master')?.unlockedAt) {
     newlyUnlocked.push('task_master');
   }
-  
+
   // 检查首次兑换徽章
   if (state.redemptions.length >= 1 && !state.badges.find(b => b.id === 'first_reward')?.unlockedAt) {
     newlyUnlocked.push('first_reward');
   }
-  
+
   return newlyUnlocked;
+};
+
+// 重新验证并修复所有徽章状态
+export const validateAndFixBadgeState = (state: AppState): AppState => {
+  const newState = { ...state };
+  const cumulativeEarnedPoints = calculateCumulativeEarnedPoints(newState);
+  const streak = calculateStreak(newState);
+  const categoryStats = getCategoryStats(newState);
+  const totalTasks = getTotalCompletedTasks(newState);
+
+  console.log('Validating badge state:', {
+    cumulativeEarnedPoints,
+    streak,
+    categoryStats,
+    totalTasks,
+    currentBadges: newState.badges.map(b => ({ id: b.id, unlockedAt: b.unlockedAt }))
+  });
+
+  newState.badges = newState.badges.map(badge => {
+    let shouldBeUnlocked = false;
+
+    switch (badge.id) {
+      case 'streak_3':
+        shouldBeUnlocked = streak >= 3;
+        break;
+      case 'streak_7':
+        shouldBeUnlocked = streak >= 7;
+        break;
+      case 'streak_15':
+        shouldBeUnlocked = streak >= 15;
+        break;
+      case 'sport_master':
+        shouldBeUnlocked = categoryStats.sport >= 20;
+        break;
+      case 'study_master':
+        shouldBeUnlocked = categoryStats.study >= 30;
+        break;
+      case 'art_master':
+        shouldBeUnlocked = categoryStats.art >= 15;
+        break;
+      case 'points_50':
+        shouldBeUnlocked = cumulativeEarnedPoints >= 50;
+        break;
+      case 'points_100':
+        shouldBeUnlocked = cumulativeEarnedPoints >= 100;
+        break;
+      case 'points_200':
+        shouldBeUnlocked = cumulativeEarnedPoints >= 200;
+        break;
+      case 'points_500':
+        shouldBeUnlocked = cumulativeEarnedPoints >= 500;
+        break;
+      case 'task_master':
+        shouldBeUnlocked = totalTasks >= 100;
+        break;
+      case 'first_reward':
+        shouldBeUnlocked = newState.redemptions.length >= 1;
+        break;
+    }
+
+    if (shouldBeUnlocked && !badge.unlockedAt) {
+      console.log(`Unlocking badge ${badge.id} (should be unlocked)`);
+      return { ...badge, unlockedAt: Date.now() };
+    } else if (!shouldBeUnlocked && badge.unlockedAt) {
+      console.log(`Locking badge ${badge.id} (should NOT be unlocked)`);
+      return { ...badge, unlockedAt: undefined };
+    }
+
+    return badge;
+  });
+
+  return newState;
 };

@@ -6,6 +6,7 @@ import { BadgeDisplay } from '@/components/BadgeDisplay';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { AppState } from '@/types';
+import { calculateCumulativeEarnedPoints } from '@/utils/storage';
 
 interface AchievementsProps {
   state: AppState;
@@ -34,6 +35,7 @@ export const Achievements = ({
 }: AchievementsProps) => {
   const unlockedBadges = state.badges.filter(b => b.unlockedAt);
   const lockedBadges = state.badges.filter(b => !b.unlockedAt);
+  const cumulativeEarnedPoints = calculateCumulativeEarnedPoints(state);
   
   // 明细弹窗状态
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -207,21 +209,26 @@ export const Achievements = ({
         </div>
         
         {/* 统计卡片 */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
-            <Trophy className="w-6 h-6 mx-auto mb-1" />
-            <div className="text-2xl font-bold">{unlockedBadges.length}</div>
+        <div className="grid grid-cols-4 gap-2">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
+            <Trophy className="w-5 h-5 mx-auto mb-1" />
+            <div className="text-xl font-bold">{unlockedBadges.length}</div>
             <div className="text-xs text-white/80">已获得</div>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
-            <Flame className="w-6 h-6 mx-auto mb-1" />
-            <div className="text-2xl font-bold">{streak}</div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
+            <Flame className="w-5 h-5 mx-auto mb-1" />
+            <div className="text-xl font-bold">{streak}</div>
             <div className="text-xs text-white/80">连续天数</div>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
-            <Target className="w-6 h-6 mx-auto mb-1" />
-            <div className="text-2xl font-bold">{totalCompletedTasks}</div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
+            <Target className="w-5 h-5 mx-auto mb-1" />
+            <div className="text-xl font-bold">{totalCompletedTasks}</div>
             <div className="text-xs text-white/80">完成任务</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
+            <Star className="w-5 h-5 mx-auto mb-1" />
+            <div className="text-xl font-bold">{cumulativeEarnedPoints}</div>
+            <div className="text-xs text-white/80">累计获得</div>
           </div>
         </div>
       </header>

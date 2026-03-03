@@ -158,6 +158,7 @@ function AppContent() {
         return (
           <Profile 
             totalPoints={localState.state.totalPoints}
+            badges={localState.state.badges}
             onBack={() => setCurrentView('home')} 
             onRefresh={localState.refreshData} 
             isSyncing={localState.isSyncing}
@@ -215,43 +216,41 @@ function AppContent() {
         </AnimatePresence>
       </main>
 
-      {/* 底部导航栏 - 只在首页显示 */}
-      {currentView === 'home' && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
-          <div className="max-w-lg mx-auto flex justify-around py-2">
-            <NavButton
-              icon={<Home className="w-5 h-5" />}
-              label="首页"
-              active={true}
-              onClick={() => setCurrentView('home')}
-            />
-            <NavButton
-              icon={<ClipboardList className="w-5 h-5" />}
-              label="作业"
-              active={false}
-              onClick={() => setCurrentView('tasks')}
-            />
-            <NavButton
-              icon={<Gift className="w-5 h-5" />}
-              label="奖品"
-              active={false}
-              onClick={() => setCurrentView('rewards')}
-            />
-            <NavButton
-              icon={<Trophy className="w-5 h-5" />}
-              label="成就"
-              active={false}
-              onClick={() => setCurrentView('achievements')}
-            />
-            <NavButton
-              icon={<User className="w-5 h-5" />}
-              label="我的"
-              active={false}
-              onClick={() => setCurrentView('profile')}
-            />
-          </div>
-        </nav>
-      )}
+      {/* 底部导航栏 */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-lg mx-auto flex justify-around py-2">
+          <NavButton
+            icon={<Home className="w-5 h-5" />}
+            label="首页"
+            active={currentView === 'home'}
+            onClick={() => setCurrentView('home')}
+          />
+          <NavButton
+            icon={<ClipboardList className="w-5 h-5" />}
+            label="作业"
+            active={currentView === 'tasks'}
+            onClick={() => setCurrentView('tasks')}
+          />
+          <NavButton
+            icon={<Gift className="w-5 h-5" />}
+            label="奖品"
+            active={currentView === 'rewards'}
+            onClick={() => setCurrentView('rewards')}
+          />
+          <NavButton
+            icon={<Trophy className="w-5 h-5" />}
+            label="成就"
+            active={currentView === 'achievements'}
+            onClick={() => setCurrentView('achievements')}
+          />
+          <NavButton
+            icon={<User className="w-5 h-5" />}
+            label="我的"
+            active={currentView === 'profile' || currentView === 'pointManagement'}
+            onClick={() => setCurrentView('profile')}
+          />
+        </div>
+      </nav>
 
       {/* 徽章解锁弹窗 */}
       <BadgeUnlockModal

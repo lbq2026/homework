@@ -107,7 +107,7 @@ export const Rewards = ({
         </div>
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
           <p className="text-white/80 text-sm mb-1">我的积分</p>
-          <PointsDisplay points={state.totalPoints} size="lg" />
+          <PointsDisplay points={state.totalPoints} size="lg" variant="solid" />
         </div>
       </header>
 
@@ -118,11 +118,6 @@ export const Rewards = ({
             <TabsTrigger value="rewards">奖品墙</TabsTrigger>
             <TabsTrigger value="history">
               兑换记录
-              {state.redemptions.length > 0 && (
-                <span className="ml-1 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full">
-                  {state.redemptions.length}
-                </span>
-              )}
             </TabsTrigger>
           </TabsList>
 

@@ -14,13 +14,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 interface ProfileProps {
   totalPoints?: number;
+  badges?: Array<{ unlockedAt?: number }>;
   onBack: () => void;
   onRefresh?: () => Promise<void>;
   isSyncing?: boolean;
   onManagePoints?: () => void;
 }
 
-export const Profile = ({ totalPoints, onBack, onRefresh, isSyncing, onManagePoints }: ProfileProps) => {
+export const Profile = ({ totalPoints, badges, onBack, onRefresh, isSyncing, onManagePoints }: ProfileProps) => {
   const { user, signOut, updateProfile, updateEmail, updatePhone, updatePassword } = useAuth();
   const { profile, refresh } = useProfile();
   
@@ -278,7 +279,7 @@ export const Profile = ({ totalPoints, onBack, onRefresh, isSyncing, onManagePoi
               <span className="text-gray-600">徽章</span>
             </div>
             <div className="text-3xl font-bold text-purple-600">
-              0
+              {badges?.filter(b => b.unlockedAt).length ?? 0}
             </div>
           </div>
         </motion.div>
