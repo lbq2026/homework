@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, Coins, Phone } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth.tsx';
