@@ -390,5 +390,29 @@ export const useProfile = () => {
     return !error;
   }, [user, fetchProfile]);
 
-  return { profile, loading, updateTotalPoints, updatePhone, refresh: fetchProfile };
+  const updateUsername = useCallback(async (username: string) => {
+    if (!user) return false;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ username: username })
+      .eq('id', user.id);
+    
+    if (error) handleError(error);
+    else await fetchProfile();
+    return !error;
+  }, [user, fetchProfile]);
+
+  const updateAvatar = useCallback(async (avatarUrl: string) => {
+    if (!user) return false;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ avatar_url: avatarUrl })
+      .eq('id', user.id);
+    
+    if (error) handleError(error);
+    else await fetchProfile();
+    return !error;
+  }, [user, fetchProfile]);
+
+  return { profile, loading, updateTotalPoints, updatePhone, updateUsername, updateAvatar, refresh: fetchProfile };
 };

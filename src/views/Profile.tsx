@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, Coins } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Mail, Star, Award, Edit2, Check, X, Coins, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth.tsx';
 import { useProfile } from '@/hooks/useSupabaseData';
 import type { AppState } from '@/types';
@@ -13,14 +14,37 @@ interface ProfileProps {
   onOpenPointManagement?: () => void;
 }
 
+const AVATAR_OPTIONS = [
+  { emoji: '😊', label: '微笑' },
+  { emoji: '😎', label: '酷' },
+  { emoji: '🤩', label: '兴奋' },
+  { emoji: '🌟', label: '星星' },
+  { emoji: '🚀', label: '火箭' },
+  { emoji: '👑', label: '皇冠' },
+  { emoji: '💎', label: '钻石' },
+  { emoji: '✨', label: '闪光' },
+  { emoji: '🎨', label: '艺术' },
+  { emoji: '🎵', label: '音乐' },
+  { emoji: '🎮', label: '游戏' },
+  { emoji: '📚', label: '阅读' },
+  { emoji: '🏆', label: '奖杯' },
+  { emoji: '🥇', label: '金牌' },
+  { emoji: '🦄', label: '独角兽' },
+  { emoji: '🐱', label: '猫咪' },
+  { emoji: '🐶', label: '狗狗' },
+  { emoji: '🦋', label: '蝴蝶' },
+  { emoji: '🌈', label: '彩虹' },
+];
+
 export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) => {
   const { user, signOut } = useAuth();
-  const { profile, updatePhone } = useProfile();
-  const [isEditing, setIsEditing] = useState(false);
+  const { profile, updatePhone, updateUsername, updateAvatar } = useProfile();
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [username, setUsername] = useState(profile?.username || '');
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phone, setPhone] = useState(profile?.phone || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -29,18 +53,31 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
     }
   }, [profile]);
 
-  const handleSave = async () => {
+  const handleSaveUsername = async () => {
+    if (!username.trim()) return;
     setIsLoading(true);
-    // 这里可以添加更新用户名的逻辑
-    setIsEditing(false);
+    const success = await updateUsername(username.trim());
+    if (success) {
+      setIsEditingUsername(false);
+    }
     setIsLoading(false);
   };
 
   const handleSavePhone = async () => {
+    if (!phone.trim()) return;
     setIsLoading(true);
-    const success = await updatePhone(phone);
+    const success = await updatePhone(phone.trim());
     if (success) {
       setIsEditingPhone(false);
+    }
+    setIsLoading(false);
+  };
+
+  const handleSelectAvatar = async (emoji: string) => {
+    setIsLoading(true);
+    const success = await updateAvatar(emoji);
+    if (success) {
+      setAvatarDialogOpen(false);
     }
     setIsLoading(false);
   };
@@ -65,9 +102,22 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
     }
   };
 
+  const formatCreatedAt = (createdAt?: string) => {
+    if (!createdAt) return '-';
+    try {
+      const date = new Date(createdAt);
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return '-';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50">
-      {/* 头部 */}
       <header className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6">
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="text-white hover:bg-white/20">
@@ -79,22 +129,29 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
       </header>
 
       <div className="p-4 pb-24 space-y-4">
-        {/* 用户信息卡片 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-white rounded-2xl p-6 shadow-md"
         >
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-3xl text-white">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="avatar" className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-10 h-10" />
-              )}
+            <div className="relative">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-4xl">
+                {profile?.avatar_url ? (
+                  <span className="text-4xl">{profile.avatar_url}</span>
+                ) : (
+                  <User className="w-10 h-10 text-white" />
+                )}
+              </div>
+              <button
+                onClick={() => setAvatarDialogOpen(true)}
+                className="absolute -bottom-1 -right-1 w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center hover:bg-amber-600 transition-colors shadow-md"
+              >
+                <Camera className="w-4 h-4 text-white" />
+              </button>
             </div>
             <div className="flex-1">
-              {isEditing ? (
+              {isEditingUsername ? (
                 <div className="flex items-center gap-2">
                   <Input
                     value={username}
@@ -102,17 +159,17 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
                     className="w-40"
                     placeholder="用户名"
                   />
-                  <Button size="icon" variant="ghost" onClick={handleSave} disabled={isLoading}>
+                  <Button size="icon" variant="ghost" onClick={handleSaveUsername} disabled={isLoading}>
                     <Check className="w-4 h-4 text-green-500" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { setIsEditing(false); setUsername(profile?.username || ''); }}>
+                  <Button size="icon" variant="ghost" onClick={() => { setIsEditingUsername(false); setUsername(profile?.username || ''); }}>
                     <X className="w-4 h-4 text-red-500" />
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-bold text-gray-800">{profile?.username || user?.email?.split('@')[0]}</h2>
-                  <Button size="icon" variant="ghost" onClick={() => setIsEditing(true)}>
+                  <Button size="icon" variant="ghost" onClick={() => setIsEditingUsername(true)}>
                     <Edit2 className="w-4 h-4 text-gray-400" />
                   </Button>
                 </div>
@@ -130,7 +187,6 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
           </div>
         </motion.div>
 
-        {/* 统计信息 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -157,7 +213,6 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
           </div>
         </motion.div>
 
-        {/* 积分管理按钮 */}
         {onOpenPointManagement && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -174,7 +229,6 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
           </motion.div>
         )}
 
-        {/* 账户信息 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -186,7 +240,7 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
               <span className="text-gray-500">注册时间</span>
               <span className="text-gray-800">
-                {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '-'}
+                {formatCreatedAt(profile?.created_at)}
               </span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -231,7 +285,6 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
           </div>
         </motion.div>
 
-        {/* 退出登录 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -247,6 +300,26 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
           </Button>
         </motion.div>
       </div>
+
+      <Dialog open={avatarDialogOpen} onOpenChange={setAvatarDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>选择头像</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-5 gap-3 py-4">
+            {AVATAR_OPTIONS.map((option) => (
+              <button
+                key={option.emoji}
+                onClick={() => handleSelectAvatar(option.emoji)}
+                className="w-14 h-14 bg-gray-100 hover:bg-amber-100 rounded-xl flex items-center justify-center text-3xl transition-all hover:scale-110 active:scale-95"
+                title={option.label}
+              >
+                {option.emoji}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
