@@ -349,7 +349,11 @@ export const useProfile = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase
       .from('profiles')
@@ -357,8 +361,12 @@ export const useProfile = () => {
       .eq('id', user.id)
       .single();
     
-    if (error) handleError(error);
-    else if (data) setProfile(data);
+    if (error) {
+      handleError(error);
+      setProfile(null);
+    } else if (data) {
+      setProfile(data);
+    }
     setLoading(false);
   }, [user]);
 
@@ -373,9 +381,12 @@ export const useProfile = () => {
       .update({ total_points: points })
       .eq('id', user.id);
     
-    if (error) handleError(error);
-    else await fetchProfile();
-    return !error;
+    if (error) {
+      handleError(error);
+      return false;
+    }
+    await fetchProfile();
+    return true;
   }, [user, fetchProfile]);
 
   const updatePhone = useCallback(async (phone: string) => {
@@ -385,9 +396,12 @@ export const useProfile = () => {
       .update({ phone: phone })
       .eq('id', user.id);
     
-    if (error) handleError(error);
-    else await fetchProfile();
-    return !error;
+    if (error) {
+      handleError(error);
+      return false;
+    }
+    await fetchProfile();
+    return true;
   }, [user, fetchProfile]);
 
   const updateUsername = useCallback(async (username: string) => {
@@ -397,9 +411,12 @@ export const useProfile = () => {
       .update({ username: username })
       .eq('id', user.id);
     
-    if (error) handleError(error);
-    else await fetchProfile();
-    return !error;
+    if (error) {
+      handleError(error);
+      return false;
+    }
+    await fetchProfile();
+    return true;
   }, [user, fetchProfile]);
 
   const updateAvatar = useCallback(async (avatarUrl: string) => {
@@ -409,9 +426,12 @@ export const useProfile = () => {
       .update({ avatar_url: avatarUrl })
       .eq('id', user.id);
     
-    if (error) handleError(error);
-    else await fetchProfile();
-    return !error;
+    if (error) {
+      handleError(error);
+      return false;
+    }
+    await fetchProfile();
+    return true;
   }, [user, fetchProfile]);
 
   return { profile, loading, updateTotalPoints, updatePhone, updateUsername, updateAvatar, refresh: fetchProfile };
