@@ -54,6 +54,14 @@ export const Home = ({
     return state.tertiaryCategories.find(c => c.id === id);
   };
 
+  const getSecondaryCategoryById = (id: string) => {
+    return state.secondaryCategories.find(c => c.id === id);
+  };
+
+  const getPrimaryCategoryById = (id: string) => {
+    return state.primaryCategories.find(c => c.id === id);
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -162,6 +170,8 @@ export const Home = ({
                 if (!task) {
                   const tertiaryCat = getTertiaryCategoryById(dailyTask.taskId);
                   if (!tertiaryCat) return null;
+                  const secondaryCat = getSecondaryCategoryById(tertiaryCat.secondaryCategoryId);
+                  const primaryCat = secondaryCat ? getPrimaryCategoryById(secondaryCat.primaryCategoryId) : undefined;
                   return (
                     <motion.div
                       key={dailyTask.id}
@@ -187,7 +197,20 @@ export const Home = ({
                         <div className={`font-medium truncate ${dailyTask.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                           {tertiaryCat.name}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          {primaryCat && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                              {primaryCat.name}
+                            </span>
+                          )}
+                          {secondaryCat && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                              {secondaryCat.name}
+                            </span>
+                          )}
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            {tertiaryCat.name}
+                          </span>
                           <span className="text-xs text-amber-600 font-medium">
                             +{tertiaryCat.defaultPoints} 积分
                           </span>
@@ -206,12 +229,34 @@ export const Home = ({
                     </motion.div>
                   );
                 }
+                let primaryCat;
+                let secondaryCat;
+                let tertiaryCat;
+                if (task.tertiaryCategoryId) {
+                  tertiaryCat = getTertiaryCategoryById(task.tertiaryCategoryId);
+                  if (tertiaryCat) {
+                    secondaryCat = getSecondaryCategoryById(tertiaryCat.secondaryCategoryId);
+                    if (secondaryCat) {
+                      primaryCat = getPrimaryCategoryById(secondaryCat.primaryCategoryId);
+                    }
+                  }
+                } else if (task.secondaryCategoryId) {
+                  secondaryCat = getSecondaryCategoryById(task.secondaryCategoryId);
+                  if (secondaryCat) {
+                    primaryCat = getPrimaryCategoryById(secondaryCat.primaryCategoryId);
+                  }
+                } else if (task.primaryCategoryId) {
+                  primaryCat = getPrimaryCategoryById(task.primaryCategoryId);
+                }
                 return (
                   <TaskItem
                     key={dailyTask.id}
                     task={task}
                     completed={dailyTask.completed}
                     onToggle={() => onToggleTask(dailyTask.id)}
+                    primaryCategory={primaryCat}
+                    secondaryCategory={secondaryCat}
+                    tertiaryCategory={tertiaryCat}
                   />
                 );
               })}

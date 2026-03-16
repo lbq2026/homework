@@ -4,8 +4,9 @@ import { useAuth } from './useAuth.tsx';
 import type { Task, Reward, BadgeType, DailyRecord } from '@/types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const handleError = (error: any) => {
-  console.error('Supabase error:', error);
+const handleError = (error: any, context: string = '') => {
+  console.error(`Supabase error${context ? ` (${context})` : ''}:`, error);
+  console.error('Error details:', JSON.stringify(error, null, 2));
   return null;
 };
 
@@ -350,10 +351,12 @@ export const useProfile = () => {
 
   const fetchProfile = useCallback(async () => {
     if (!user) {
+      console.log('fetchProfile: no user, skipping');
       setProfile(null);
       setLoading(false);
       return;
     }
+    console.log('fetchProfile called for user:', user.id);
     setLoading(true);
     const { data, error } = await supabase
       .from('profiles')
@@ -361,8 +364,10 @@ export const useProfile = () => {
       .eq('id', user.id)
       .single();
     
+    console.log('fetchProfile response:', { data, error });
+    
     if (error) {
-      handleError(error);
+      handleError(error, 'fetchProfile');
       setProfile(null);
     } else if (data) {
       setProfile(data);
@@ -390,46 +395,127 @@ export const useProfile = () => {
   }, [user, fetchProfile]);
 
   const updatePhone = useCallback(async (phone: string) => {
-    if (!user) return false;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ phone: phone })
-      .eq('id', user.id);
-    
-    if (error) {
-      handleError(error);
+    if (!user) {
+      console.error('updatePhone failed: user not authenticated');
       return false;
     }
+    console.log('updatePhone called with:', { phone, userId: user.id });
+    
+    // 先尝试更新，如果记录不存在则创建
+    let { data, error } = await supabase
+      .from('profiles')
+      .update({ phone: phone })
+      .eq('id', user.id)
+      .select();
+    
+    console.log('updatePhone initial response:', { data, error });
+    
+    // 如果更新失败（可能是记录不存在），尝试创建
+    if (error) {
+      console.log('Update failed, trying to insert profile...');
+      const insertResult = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          phone: phone,
+          role: 'child',
+          total_points: 0
+        })
+        .select();
+      
+      console.log('Insert profile result:', insertResult);
+      
+      if (insertResult.error) {
+        handleError(insertResult.error, 'insertProfile');
+        return false;
+      }
+      data = insertResult.data;
+    }
+    
     await fetchProfile();
     return true;
   }, [user, fetchProfile]);
 
   const updateUsername = useCallback(async (username: string) => {
-    if (!user) return false;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ username: username })
-      .eq('id', user.id);
-    
-    if (error) {
-      handleError(error);
+    if (!user) {
+      console.error('updateUsername failed: user not authenticated');
       return false;
     }
+    console.log('updateUsername called with:', { username, userId: user.id });
+    
+    // 先尝试更新，如果记录不存在则创建
+    let { data, error } = await supabase
+      .from('profiles')
+      .update({ username: username })
+      .eq('id', user.id)
+      .select();
+    
+    console.log('updateUsername initial response:', { data, error });
+    
+    // 如果更新失败（可能是记录不存在），尝试创建
+    if (error) {
+      console.log('Update failed, trying to insert profile...');
+      const insertResult = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          username: username,
+          role: 'child',
+          total_points: 0
+        })
+        .select();
+      
+      console.log('Insert profile result:', insertResult);
+      
+      if (insertResult.error) {
+        handleError(insertResult.error, 'insertProfile');
+        return false;
+      }
+      data = insertResult.data;
+    }
+    
     await fetchProfile();
     return true;
   }, [user, fetchProfile]);
 
   const updateAvatar = useCallback(async (avatarUrl: string) => {
-    if (!user) return false;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ avatar_url: avatarUrl })
-      .eq('id', user.id);
-    
-    if (error) {
-      handleError(error);
+    if (!user) {
+      console.error('updateAvatar failed: user not authenticated');
       return false;
     }
+    console.log('updateAvatar called with:', { avatarUrl, userId: user.id });
+    
+    // 先尝试更新，如果记录不存在则创建
+    let { data, error } = await supabase
+      .from('profiles')
+      .update({ avatar_url: avatarUrl })
+      .eq('id', user.id)
+      .select();
+    
+    console.log('updateAvatar initial response:', { data, error });
+    
+    // 如果更新失败（可能是记录不存在），尝试创建
+    if (error) {
+      console.log('Update failed, trying to insert profile...');
+      const insertResult = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          avatar_url: avatarUrl,
+          role: 'child',
+          total_points: 0
+        })
+        .select();
+      
+      console.log('Insert profile result:', insertResult);
+      
+      if (insertResult.error) {
+        handleError(insertResult.error, 'insertProfile');
+        return false;
+      }
+      data = insertResult.data;
+    }
+    
     await fetchProfile();
     return true;
   }, [user, fetchProfile]);

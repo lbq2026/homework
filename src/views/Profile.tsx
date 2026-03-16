@@ -55,17 +55,19 @@ export const Profile = ({ state, onBack, onOpenPointManagement }: ProfileProps) 
   }, [profile]);
 
   const handleSaveUsername = async () => {
+    console.log('handleSaveUsername called with username:', username);
     if (!username.trim()) {
       toast.error('用户名不能为空');
       return;
     }
     setIsSaving(true);
     const success = await updateUsername(username.trim());
+    console.log('updateUsername result:', success);
     if (success) {
       setIsEditingUsername(false);
       toast.success('用户名更新成功');
     } else {
-      toast.error('用户名更新失败');
+      toast.error('用户名更新失败，请查看控制台了解详情');
     }
     setIsSaving(false);
   };
