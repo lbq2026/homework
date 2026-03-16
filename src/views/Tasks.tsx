@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 import type { AppState, Task, PrimaryCategory, SecondaryCategory, TertiaryCategory } from '@/types';
 import { TASK_ICONS } from '@/types';
@@ -17,6 +18,7 @@ interface TasksProps {
   onDeleteTask?: (taskId: string) => void;
   onAddToToday?: (taskId: string) => void;
   onRemoveFromToday: (dailyTaskId: string) => void;
+  onToggleTask?: (dailyTaskId: string) => void;
   onAddPrimaryCategory?: (category: Omit<PrimaryCategory, 'id' | 'createdAt'>) => void;
   onEditPrimaryCategory?: (categoryId: string, updates: Partial<PrimaryCategory>) => void;
   onDeletePrimaryCategory?: (categoryId: string) => void;
@@ -50,6 +52,7 @@ export const Tasks = ({
   // @ts-ignore: unused
   onAddToToday,
   onRemoveFromToday,
+  onToggleTask,
   onAddPrimaryCategory,
   onEditPrimaryCategory,
   onDeletePrimaryCategory,
@@ -270,18 +273,103 @@ export const Tasks = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {todayTasks.map((dailyTask) => {
-                    const task = getTaskById(dailyTask.taskId);
-                    if (!task) {
-                      const tertiaryCat = getTertiaryCategoryById(dailyTask.taskId);
-                      if (!tertiaryCat) return null;
+                  <AnimatePresence mode="popLayout">
+                    {todayTasks.map((dailyTask) => {
+                      const task = getTaskById(dailyTask.taskId);
+                      if (!task) {
+                        const tertiaryCat = getTertiaryCategoryById(dailyTask.taskId);
+                        if (!tertiaryCat) return null;
+                        return (
+                          <motion.div
+                            key={dailyTask.id}
+                            layout
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: -100 }}
+                            className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                              dailyTask.completed 
+                                ? 'bg-green-50 border-green-200' 
+                                : 'bg-white border-gray-100 hover:border-blue-200'
+                            }`}
+                          >
+                            {onToggleTask && (
+                              <Checkbox
+                                checked={dailyTask.completed}
+                                onCheckedChange={() => onToggleTask(dailyTask.id)}
+                                className="w-6 h-6 border-2 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+                              />
+                            )}
+                            
+                            <div className="text-2xl">{tertiaryCat.icon}</div>
+                            
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-medium truncate ${dailyTask.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                {tertiaryCat.name}
+                              </div>
+                              <div className="text-sm text-amber-600">+{tertiaryCat.defaultPoints} 积分</div>
+                            </div>
+                            
+                            {dailyTask.completed && (
+                              <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                className="text-green-500"
+                              >
+                                <Check className="w-5 h-5" />
+                              </motion.div>
+                            )}
+                            
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onRemoveFromToday(dailyTask.id)}
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </motion.div>
+                        );
+                      }
                       return (
-                        <div key={dailyTask.id} className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3">
-                          <div className="text-2xl">{tertiaryCat.icon}</div>
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-800">{tertiaryCat.name}</div>
-                            <div className="text-sm text-amber-600">+{tertiaryCat.defaultPoints} 积分</div>
+                        <motion.div
+                          key={dailyTask.id}
+                          layout
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -100 }}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                            dailyTask.completed 
+                              ? 'bg-green-50 border-green-200' 
+                              : 'bg-white border-gray-100 hover:border-blue-200'
+                          }`}
+                        >
+                          {onToggleTask && (
+                            <Checkbox
+                              checked={dailyTask.completed}
+                              onCheckedChange={() => onToggleTask(dailyTask.id)}
+                              className="w-6 h-6 border-2 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
+                            />
+                          )}
+                          
+                          <div className="text-2xl">{task.icon}</div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-medium truncate ${dailyTask.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                              {task.name}
+                            </div>
+                            <div className="text-sm text-amber-600">+{task.basePoints} 积分</div>
                           </div>
+                          
+                          {dailyTask.completed && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="text-green-500"
+                            >
+                              <Check className="w-5 h-5" />
+                            </motion.div>
+                          )}
+                          
                           <Button
                             variant="ghost"
                             size="sm"
@@ -290,27 +378,10 @@ export const Tasks = ({
                           >
                             <X className="w-4 h-4" />
                           </Button>
-                        </div>
+                        </motion.div>
                       );
-                    }
-                    return (
-                      <div key={dailyTask.id} className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3">
-                        <div className="text-2xl">{task.icon}</div>
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-800">{task.name}</div>
-                          <div className="text-sm text-amber-600">+{task.basePoints} 积分</div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onRemoveFromToday(dailyTask.id)}
-                          className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
+                    })}
+                  </AnimatePresence>
                 </div>
               )}
             </motion.div>

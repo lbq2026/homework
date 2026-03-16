@@ -116,6 +116,7 @@ function AppContent() {
             onDeleteTask={localState.deleteTask}
             onAddToToday={localState.addTaskToToday}
             onRemoveFromToday={localState.removeTaskFromToday}
+            onToggleTask={handleToggleTask}
             onAddPrimaryCategory={localState.addPrimaryCategory}
             onEditPrimaryCategory={localState.editPrimaryCategory}
             onDeletePrimaryCategory={localState.deletePrimaryCategory}

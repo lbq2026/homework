@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Check, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { Task } from '@/types';
+import type { Task, PrimaryCategory, SecondaryCategory, TertiaryCategory } from '@/types';
 
 interface TaskItemProps {
   task: Task;
@@ -12,6 +12,9 @@ interface TaskItemProps {
   onAddToToday?: () => void;
   isInToday?: boolean;
   showActions?: boolean;
+  primaryCategory?: PrimaryCategory;
+  secondaryCategory?: SecondaryCategory;
+  tertiaryCategory?: TertiaryCategory;
 }
 
 export const TaskItem = ({ 
@@ -22,6 +25,9 @@ export const TaskItem = ({
   onAddToToday,
   isInToday = false,
   showActions = true,
+  primaryCategory,
+  secondaryCategory,
+  tertiaryCategory,
 }: TaskItemProps) => {
   const categoryColors = {
     study: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -63,8 +69,23 @@ export const TaskItem = ({
         <div className={`font-medium truncate ${completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
           {task.name}
         </div>
-        <div className="flex items-center gap-2 mt-1">
-          {task.category && (
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {primaryCategory && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+              {primaryCategory.name}
+            </span>
+          )}
+          {secondaryCategory && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+              {secondaryCategory.name}
+            </span>
+          )}
+          {tertiaryCategory && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+              {tertiaryCategory.name}
+            </span>
+          )}
+          {!primaryCategory && !secondaryCategory && !tertiaryCategory && task.category && (
             <span className={`text-xs px-2 py-0.5 rounded-full border ${categoryColors[task.category]}`}>
               {categoryLabels[task.category]}
             </span>
