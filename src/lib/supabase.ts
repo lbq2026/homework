@@ -17,7 +17,15 @@ export const supabase: SupabaseClient<any> = (() => {
     return {} as SupabaseClient<any>;
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabaseInstance = createClient<any>(supabaseUrl, supabaseAnonKey);
+  supabaseInstance = createClient<any>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      flowType: 'pkce',
+    },
+  });
   return supabaseInstance;
 })();
 
