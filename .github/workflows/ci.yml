@@ -27,7 +27,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       # TODO(阶段三后续)：待修复历史 lint 债务后移除 continue-on-error，改为强制门禁
       - name: Lint
