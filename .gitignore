@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# pnpm 本地配置（store 路径为机器相关，不入库）
+.npmrc
+
+# TypeScript 构建缓存
+.tsbuild
+.cache
+
+# 项目本地数据（记忆/任务数据）
+.workbuddy
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.log
+*.tgz
+
+# 本地测试数据库
+_sqlite_test.db
+*.sqlite3
+*.db
+
+# PWA 图标生成脚本产物（如需保留则移除本行）
+# public/icons/
+
+# 模板遗留临时脚本
+parser_fix.js
+univ_check.js

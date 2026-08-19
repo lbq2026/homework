@@ -1,0 +1,41 @@
+# CI 质量门禁：typecheck + build + test（lint 当前为不阻塞，见下方 TODO）
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # TODO(阶段三后续)：待修复历史 lint 债务后移除 continue-on-error，改为强制门禁
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Typecheck & Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test

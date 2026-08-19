@@ -1,0 +1,95 @@
+/**
+ * Design System Tokens (v2.0 · 亮色卡通版)
+ * 设计师：UI Designer · 主题：亮色乐园
+ * 设计原则：高饱和度亮色 + 圆润卡通 + 儿童可读
+ * 使用：Tailwind 类名如 bg-brand-500、text-role-child、shadow-button
+ *       或自定义 CSS var(--brand-500)
+ */
+
+:root {
+  /* ===== 品牌色阶（天蓝，活泼清澈）===== */
+  --brand-50:  #E0F2FE;   /* 极浅背景 */
+  --brand-100: #BAE6FD;   /* 柔和背景 */
+  --brand-200: #7DD3FC;   /* hover 浅色 */
+  --brand-300: #38BDF8;   /* 装饰/高亮 */
+  --brand-400: #0EA5E9;   /* 次按钮/图标 */
+  --brand-500: #0284C7;   /* 主按钮/顶部栏 */
+  --brand-600: #0369A1;   /* 按下/深色文字 */
+  --brand-700: #075985;   /* 深色装饰 */
+
+  /* ===== 辅助色（高饱和度亮色）===== */
+  --accent-yellow-300: #FDE047;   /* 柠檬黄 */
+  --accent-yellow-400: #FACC15;   /* 金黄 */
+  --accent-yellow-600: #CA8A04;   /* 金黄深色文字 */
+  --accent-green-300:  #86EFAC;   /* 嫩绿 */
+  --accent-green-400:  #4ADE80;   /* 草绿 */
+  --accent-green-600:  #16A34A;   /* 草绿深色文字 */
+  --accent-pink-300:   #F9A8D4;   /* 棉花糖粉 */
+  --accent-pink-400:   #F472B6;   /* 亮粉 */
+  --accent-pink-600:   #DB2777;   /* 粉色深色文字 */
+  --accent-purple-300: #D8B4FE;   /* 香芋紫 */
+  --accent-purple-400: #A855F7;   /* 紫罗兰 */
+  --accent-purple-600: #7C3AED;   /* 紫色深色文字 */
+  --accent-orange-300: #FDBA74;   /* 蜜桔橙 */
+  --accent-orange-400: #FB923C;   /* 活力橙 */
+  --accent-orange-600: #EA580C;   /* 橙色深色文字 */
+
+  /* ===== 中性色（奶油白/暖灰，柔和不刺眼）===== */
+  --neutral-0:   #FFFFFF;
+  --neutral-50:  #FAFAF9;   /* 推荐页面底色 */
+  --neutral-100: #F5F5F4;
+  --neutral-200: #E7E5E4;
+  --neutral-400: #A8A29E;
+  --neutral-600: #57534E;
+  --neutral-800: #292524;
+  --neutral-900: #1C1917;
+
+  /* ===== 语义色 ===== */
+  --semantic-success:      #16A34A;
+  --semantic-success-soft: #DCFCE7;
+  --semantic-warning:      #D97706;
+  --semantic-warning-soft: #FEF3C7;
+  --semantic-danger:       #DC2626;
+  --semantic-danger-soft:  #FEE2E2;
+  --semantic-info:         #0284C7;
+  --semantic-info-soft:    #E0F2FE;
+
+  /* ===== 角色专属色 ===== */
+  --role-child:       #EC4899;   /* 亮粉 · 孩子 */
+  --role-child-soft:  #FCE7F3;
+  --role-parent:      #0EA5E9;   /* 天蓝 · 家长 */
+  --role-parent-soft: #E0F2FE;
+
+  /* ===== 等级色 ===== */
+  --level-bronze:   #D97706;
+  --level-silver:   #94A3B8;
+  --level-gold:     #FACC15;
+  --level-platinum: #38BDF8;
+
+  /* ===== 圆角（圆润卡通）===== */
+  --radius-pill:    9999px;
+  --radius-surface: 24px;
+  --radius-card:    20px;
+  --radius-button:  14px;
+  --radius-input:   12px;
+  --radius-badge:   9999px;
+
+  /* ===== 阴影（柔和蓝调投影）===== */
+  --shadow-card:        0 4px 12px rgba(14, 165, 233, 0.08);
+  --shadow-card-hover:  0 8px 20px rgba(14, 165, 233, 0.14);
+  --shadow-button:      0 4px 0 #0284C7;       /* 卡通按钮立体投影 */
+  --shadow-button-active: 0 2px 0 #0284C7;     /* 按钮按下 */
+  --shadow-focus:       0 0 0 4px rgba(56, 189, 248, 0.35);
+
+  /* ===== 字体规范 ===== */
+  --font-display:  32px;
+  --font-title:    22px;
+  --font-subtitle: 18px;
+  --font-body:     16px;
+  --font-caption:  14px;
+}
+
+/* 暗色模式（小学生产品以亮色为主，预留结构） */
+@media (prefers-color-scheme: dark) {
+  /* 深色主题 token 预留，后续按需启用 */
+}

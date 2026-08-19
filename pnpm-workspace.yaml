@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+# pnpm 11 配置（pnpm-workspace.yaml 是 pnpm 10.6+ / 11 的 settings 主入口）
+onlyBuiltDependencies:
+  - esbuild
+# store 指向已存在的 store（node_modules 由该 store 链接，避免全量重装）
+storeDir: F:\.pnpm-store\v11
