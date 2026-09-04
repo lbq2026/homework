@@ -2,7 +2,7 @@
 
 一个专为 **6~12 岁儿童**设计的作业任务管理应用，通过游戏化的积分、连击、徽章系统激励孩子主动完成作业。家长可配置作业库、审核兑换、查看孩子成长数据。
 
-> 当前版本：**v2.1.0**（亮色乐园设计系统全站落地）
+> 当前版本：**v2.1.2**（详见 [docs/CHANGELOG.md](./docs/CHANGELOG.md)）
 
 ---
 
@@ -38,7 +38,6 @@
 
 ### 🔐 账号体系
 - **邮箱登录 + 用户名登录**（兼容，用户名登录走 RPC 反查）
-- 手机号登录（需配置短信服务商，见配置指南）
 - 家长代创建子账号（RPC 直插 auth.users，无需真实邮箱）
 - 密码找回（重置邮件）
 
@@ -79,24 +78,60 @@ Token 定义：`src/styles/tokens.css` + `tailwind.config.js`
 | 类别 | 技术 |
 |------|------|
 | 前端框架 | React 19 |
-| 开发语言 | TypeScript |
-| 构建工具 | Vite 6 |
+| 路由 | React Router 7 |
+| 开发语言 | TypeScript（strict） |
+| 构建工具 | Vite 7 |
 | UI 组件 | shadcn/ui（Radix UI） |
-| 样式方案 | Tailwind CSS 4 + CSS 变量 Token |
+| 样式方案 | Tailwind CSS 3 + CSS 变量 Token |
+| 表单 | React Hook Form + Zod |
 | 动画库 | Framer Motion |
 | 图表 | Recharts |
 | 后端服务 | Supabase（Auth + Postgres + RLS） |
 | 图标库 | Lucide React |
+| 单元测试 | Vitest |
 | 包管理器 | pnpm |
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 0. 环境要求
+
+| 依赖 | 版本要求 | 说明 |
+|------|---------|------|
+| Node.js | ≥ 20（推荐 22 LTS） | CI 环境使用 Node 22 |
+| pnpm | ≥ 9（推荐 11） | 项目锁定的包管理器，请勿与 npm/yarn 混用 |
+| Supabase 账号 | 任意 | 免费版即可运行 |
+
+检查本地环境：
 
 ```bash
+node -v    # 应为 v20.x 及以上
+pnpm -v    # 应为 9.x 及以上
+```
+
+如未安装 pnpm，任选一种方式：
+
+```bash
+# 方式一：Corepack（Node 20+ 自带，推荐）
+corepack enable
+
+# 方式二：npm 全局安装
+npm install -g pnpm
+```
+
+### 1. 克隆并安装依赖
+
+```bash
+git clone <repository-url>
+cd homework-main
 pnpm install
+```
+
+安装完成后可先做一次验证（类型检查通过说明依赖完整）：
+
+```bash
+pnpm exec tsc -b
 ```
 
 ### 2. 配置环境变量
@@ -118,15 +153,20 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ### 3. 初始化数据库
 
-在 Supabase SQL Editor 按顺序执行以下脚本（**均已自包含，不依赖前置脚本**）：
+在 Supabase SQL Editor **按顺序**执行以下脚本（均为幂等脚本，可重复执行）：
 
 ```bash
-sql/now-phase-trust-fix.sql        # P0 信任基础：RLS 策略、备份表、多孩子 parent_id
-sql/next-phase-growth-retention.sql # P1 增长留存：连击、补签卡、周报视图
-sql/later-phase-scale-compliance.sql # Later 规模合规：custom_badges 表 + RLS
-sql/username-login.sql             # 用户名→邮箱映射函数
-sql/create-child-account.sql       # 家长代创建子账号 RPC（绕过 signUp 限流）
+# 全新环境：先建基线表（10 张业务表 + RLS + 积分触发器）
+sql/full-schema.sql                 # 或 supabase/migrations/…initial_schema.sql（含 data_backups）
+# 然后依次补齐增量（均有 IF NOT EXISTS / OR REPLACE 保护）
+sql/now-phase-trust-fix.sql         # P0：redemptions.status 审核状态机 + is_parent() + 家长 RLS
+sql/next-phase-growth-retention.sql # P1：临时任务 / 重复规则 / 多孩子 RLS
+sql/later-phase-scale-compliance.sql # Later：custom_badges 表 + RLS
+sql/username-login.sql              # 用户名→邮箱映射函数
+sql/create-child-account.sql        # 家长代创建子账号 RPC（绕过 signUp 限流）
 ```
+
+> 存量库若报 `Could not find the 'status' column of 'redemptions'`：先执行 `sql/fix-redemption-status-only.sql` 急救补列，再补跑 `now-phase-trust-fix.sql` 获得家长审核完整 RLS。脚本与表结构全览见 [docs/项目总览.md](./docs/项目总览.md)。
 
 ### 4. 启动开发服务器
 
@@ -150,6 +190,62 @@ pnpm preview
 
 ---
 
+## 📖 使用示例
+
+以下是一次完整的家庭使用流程，帮助你快速理解应用的核心玩法。
+
+### 场景一：首次使用（家长侧配置）
+
+1. **注册家长账号**：打开应用 → 登录页选择「家长」角色 → 邮箱注册（或直接使用用户名登录）
+2. **创建孩子账号**：进入「我的 → 我的孩子」→ 点击「添加孩子」→ 填写用户名和密码
+   - 系统通过 RPC 直插方式创建子账号，**无需真实邮箱**，也不会触发邮件验证
+3. **配置作业库**：进入「作业管理」→ 新建分类（如：学习 → 语文 → 阅读打卡）→ 设置任务积分与重复规则
+   - 重复规则示例：「每天」或「每周一、三、五」
+4. **配置奖品库**：进入「奖品兑换」→ 家长模式 → 添加奖品（如：看一集动画片，30 积分，分类：娱乐）
+
+### 场景二：孩子每日打卡
+
+```text
+孩子登录 → 首页看到「今日清单」
+  ├─ ✅ 阅读打卡（+5 分）
+  ├─ ✅ 数学口算（+10 分）
+  └─ ⬜ 背诵古诗（+8 分）→ 点击完成
+
+连续每日完成任务 → 连击 +1 → 达到 3/7/15 天自动解锁连击徽章 🏅
+忘记打卡 → 可用积分兑换「补签卡」补回一天连击
+```
+
+### 场景三：积分兑换（孩子申请 → 家长审核）
+
+1. 孩子在「奖品兑换」页看到可用余额，点击奖品发起兑换 → 记录进入 `pending` 状态
+2. 家长在「家长控制台」收到待审核提醒 → 选择**通过 / 驳回**
+3. 通过后家长线下兑现奖品 → 标记**已兑现**，积分正式扣除
+
+### 场景四：家长手动调整积分
+
+孩子在考试中表现优异，家长想额外奖励：
+
+进入「积分管理」→「手动调整」→ 选择孩子 → 填写调整分值（+20）与原因（**必填**）→ 积分流水记录留痕，孩子端实时可见。
+
+### 核心概念速查
+
+| 概念 | 说明 |
+|------|------|
+| **积分** | 完成任务获得 + 家长手动调整 − 兑换消耗，实时汇总 |
+| **连击（Streak）** | 连续每日完成全部任务的天数，中断清零（可用补签卡挽救） |
+| **补签卡** | 用积分兑换的道具，可补回漏掉的一天，保住连击 |
+| **徽章** | 内置 12 种（连击/分类大师/积分里程碑等）+ 家长自定义 |
+| **今日清单** | 按作业库重复规则自动生成，也支持添加临时任务 |
+| **兑换状态机** | `pending`（待审核）→ `approved`（已通过）→ `fulfilled`（已兑现）/ `rejected`（驳回） |
+
+### 数据安全示例
+
+- **备份**：「设置 → 数据备份」导出 JSON 文件到本地，或使用云端备份
+- **重置**：重置前系统会自动做一次备份并要求二次确认，防止误操作
+- **离线模式**：未配置 Supabase 时应用自动降级为本地存储模式，数据仅存于当前浏览器
+
+---
+
 ## 📂 项目结构
 
 ```
@@ -159,10 +255,13 @@ src/
 │   ├── BadgeDisplay.tsx
 │   ├── BadgeUnlockModal.tsx
 │   ├── IconPicker.tsx
+│   ├── OnboardingModal.tsx    # 新用户引导弹窗
 │   ├── PointsDisplay.tsx
 │   ├── ProgressBar.tsx
 │   ├── RewardCard.tsx
 │   └── TaskItem.tsx
+├── contexts/           # React Context
+│   └── AppStateContext.tsx   # 全局应用状态（状态同步封装）
 ├── hooks/              # 自定义 Hooks
 │   ├── useSyncedAppState.ts  # 核心状态同步 Hook
 │   ├── useAuth.tsx           # 认证（邮箱/用户名/手机号/RPC）
@@ -184,7 +283,7 @@ src/
 │   └── storage.ts      # 本地存储 + 连击/徽章计算
 ├── views/              # 页面视图
 │   ├── Home.tsx            # 孩子首页
-│   ├── Auth.tsx            # 登录/注册/手机登录
+│   ├── Auth.tsx            # 登录/注册
 │   ├── Tasks.tsx           # 作业管理（今日清单 + 作业库）
 │   ├── Rewards.tsx         # 奖品兑换
 │   ├── Achievements.tsx    # 成就徽章
@@ -224,30 +323,84 @@ src/
 - `get_email_by_username(text)` — 用户名反查邮箱（用户名登录）
 - `create_child_account(text, text, uuid)` — 家长代创建子账号（密码 bcrypt 哈希，绕过 signUp 邮件限流）
 
-完整 Schema 请查看 [sql/full-schema.sql](./sql/full-schema.sql)，所有迁移脚本见 `sql/` 目录。
+表结构明细、函数/RPC、触发器与脚本执行顺序见 **[docs/项目总览.md](./docs/项目总览.md)**（汇总自 `docs/` 与 `sql/`）。
 
 ---
 
 ## 📋 开发命令
 
 ```bash
-pnpm dev          # 启动开发服务器
-pnpm build        # 构建生产版本
+pnpm dev          # 启动开发服务器（http://localhost:5173）
+pnpm build        # 类型检查 + 构建生产版本（tsc -b && vite build）
 pnpm preview      # 预览生产构建
 pnpm lint         # 运行 ESLint 检查
-pnpm exec tsc -b  # TypeScript 类型检查
+pnpm test         # 运行单元测试（Vitest）
+pnpm exec tsc -b  # 仅 TypeScript 类型检查
 ```
+
+---
+
+## 🤝 贡献指南
+
+欢迎通过 Issue 和 Pull Request 参与贡献！这是一个面向儿童的产品，请特别留意 [儿童数据安全](./src/views/Privacy.tsx) 相关约束。
+
+### 报告问题（Issue）
+
+提交 Issue 前请先搜索是否已有同类问题。新建时请包含：
+
+- **环境信息**：Node 版本、pnpm 版本、浏览器、是否配置了 Supabase
+- **复现步骤**：最小化的操作路径
+- **预期行为 vs 实际行为**：必要时附截图或控制台报错
+- **数据库相关**：涉及 SQL 的问题请注明执行的脚本版本
+
+### 提交 Pull Request
+
+1. **Fork 并创建分支**：分支名格式 `feat/xxx`（新功能）或 `fix/xxx`（修复）
+   ```bash
+   git checkout -b feat/your-feature
+   ```
+2. **本地自检**：提交前确保以下命令全部通过
+   ```bash
+   pnpm lint           # ESLint 无 error（CI 中 lint 暂不阻塞，但请保持干净）
+   pnpm exec tsc -b    # 类型检查通过（强制门禁）
+   pnpm test           # 单元测试通过（强制门禁）
+   pnpm build          # 构建成功（强制门禁）
+   ```
+3. **提交信息规范**（Conventional Commits）：
+   ```
+   feat: 新增补签卡兑换动画
+   fix: 修复凌晨 0-8 点今日任务日期偏移
+   docs: 补充贡献指南章节
+   refactor: 抽离 BadgeCard 公共组件
+   ```
+4. **更新文档**：涉及新功能或行为变更时，请同步更新 `docs/CHANGELOG.md` 与 `docs/项目历史.md`
+5. **PR 描述**：说明改动动机、实现方案、自检结果；有 UI 改动请附截图
+
+### 代码规范约定
+
+| 约定 | 说明 |
+|------|------|
+| 包管理器 | 仅使用 pnpm，禁止提交 `package-lock.json` / `yarn.lock` |
+| 样式 | 使用设计系统 Token（`src/styles/tokens.css` + Tailwind 语义类），禁止硬编码色值 |
+| ID 生成 | 统一使用 `crypto.randomUUID()`，禁止 `Date.now().toString()` |
+| 日期处理 | 统一使用 `src/utils/date.ts`（本地时区），禁止直接 `toISOString().split('T')[0]`（UTC 时区陷阱） |
+| 日志 | 生产代码禁止 `console.log`（历史已清理 93 处），错误处理可用 `console.error` |
+| SQL 脚本 | 存放于 `sql/`，需自包含可重复执行；**禁止提交任何关闭 RLS 的脚本** |
+| 组件 | 新组件放 `src/components/`，页面放 `src/views/`（命名导出，路由处 lazy 包装） |
+
+### CI 说明
+
+PR 会自动触发 GitHub Actions 质量门禁（`.github/workflows/ci.yml`）：**Lint（暂不阻塞）→ Typecheck & Build → Test**，后三项任一失败将被拦截，请修复后再请求合并。
 
 ---
 
 ## 📄 相关文档
 
+- [项目总览（模块地图 · 数据库 · 脚本顺序 · 业务规则）](./docs/项目总览.md)
 - [设计系统规范（v2.0 亮色乐园）](./docs/design-system.md)
-- [产品优化建议与路线图](./docs/产品优化建议-小勇士积分王国.md)
-- [手机号登录配置指南](./docs/手机号登录配置指南.md)
-- [PWA 评估与实施建议](./docs/PWA评估与实施建议.md)
 - [Supabase 设置指南](./SUPABASE_SETUP.md)
 - [更新日志 CHANGELOG](./docs/CHANGELOG.md)
+- [项目历史](./docs/项目历史.md)
 - [Supabase 官方文档](https://supabase.com/docs)
 - [React 文档](https://react.dev)
 - [Vite 文档](https://vite.dev)
@@ -260,6 +413,8 @@ pnpm exec tsc -b  # TypeScript 类型检查
 
 | 版本 | 内容 |
 |------|------|
+| v2.1.2 | 登录页移除手机号验证码入口（可自 git 历史恢复） |
+| v2.1.1 | 修复兑换记录次日丢失：ID 双轨错位根治 + 审核同步 + Realtime 订阅 |
 | v2.1.0 | 亮色乐园设计系统全站落地（11 页面 + 2 组件） |
 | v2.0.0 | 设计系统升级为亮色系（天蓝主色 + 高饱和辅助色） |
 | v1.4.1 | 用户名密码登录（兼容邮箱）、子账号 RPC 创建 |

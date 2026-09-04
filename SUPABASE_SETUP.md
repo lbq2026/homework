@@ -66,15 +66,13 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 - 索引优化
 - 默认分类初始化
 
-### 方法二：分步执行（如需修复）
+### 方法二：分步执行（增量/修复场景）
 
-如果已有数据库但需要修复，可以按以下顺序执行：
+如果已有数据库但需要按阶段修复或补功能，按 [docs/项目总览.md](./docs/项目总览.md) 的「SQL 脚本执行矩阵」选取脚本：
 
-1. 首先执行 `sql/fix-infinite-recursion.sql` - 修复递归问题
-2. 然后执行 `sql/fix-missing-functions.sql` - 修复缺失函数
-3. 最后执行 `sql/safe-fix-all.sql` - 安全修复所有问题
-
-或者直接执行 `sql/safe-fix-all.sql` 一次性修复所有问题。
+- 基线表缺失/损坏：重跑 `sql/full-schema.sql`（幂等，不删数据）
+- 兑换报 `status` 列缺失：先 `sql/fix-redemption-status-only.sql` 急救，再补 `sql/now-phase-trust-fix.sql`
+- 其余功能增量（临时任务/重复规则/多孩子/自定义徽章/用户名登录/子账号 RPC）：对应执行 `now/next/later-phase-*.sql` 与 `username-login.sql`、`create-child-account.sql`
 
 ## 5. 配置认证
 
@@ -107,8 +105,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ## 6. 启动应用
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 应用将在 http://localhost:5173 启动。
@@ -120,15 +118,19 @@ npm run dev
 | 表名 | 说明 | 主要字段 |
 |------|------|----------|
 | `profiles` | 用户资料表 | id, username, phone, role, total_points, parent_id |
-| `tasks` | 作业任务库 | id, user_id, name, base_points, icon, primary/secondary/tertiary_category_id |
+| `tasks` | 作业任务库 | id, user_id, name, base_points, icon, primary/secondary/tertiary_category_id, is_temporary |
 | `daily_records` | 每日作业完成记录 | id, user_id, date, tasks, total_points |
 | `rewards` | 奖品库 | id, user_id, name, points, icon, category |
-| `redemptions` | 奖品兑换记录 | id, user_id, reward_id, reward_name, points |
+| `redemptions` | 奖品兑换记录 | id, user_id, reward_id, reward_name, points, status |
 | `badges` | 用户解锁的徽章记录 | id, user_id, badge_type, unlocked_at |
+| `custom_badges` | 家长自定义徽章定义 | id, user_id, name, icon, 解锁条件 |
 | `point_adjustments` | 积分调整记录表 | id, user_id, points, reason, created_at |
 | `primary_categories` | 一级分类表 | id, user_id, name, icon, key |
 | `secondary_categories` | 二级分类表 | id, user_id, primary_category_id, name, icon |
-| `tertiary_categories` | 三级分类表 | id, user_id, secondary_category_id, name, icon, default_points |
+| `tertiary_categories` | 三级分类表 | id, user_id, secondary_category_id, name, icon, default_points, repeat_rule |
+| `data_backups` | 云端备份快照 | id, user_id, backup_data, created_at |
+
+> ⚠️ 上表为**现行完整结构**（含各增量脚本补充的字段）；`sql/full-schema.sql` 为基线，不含标新字段，需按执行矩阵补齐。完整表结构明细见 [docs/项目总览.md](./docs/项目总览.md)。
 
 ### 视图
 
@@ -246,7 +248,7 @@ pg_dump -h db.<project-ref>.supabase.co -p 5432 -U postgres -d postgres > backup
 - 旧数据未更新
 
 **解决方法**：
-- 执行 `sql/safe-fix-all.sql` 修复
+- 按 [docs/项目总览.md](./docs/项目总览.md) 的脚本执行矩阵补跑对应增量脚本
 - 检查 point_adjustments 表数据
 - 验证触发器是否正常工作
 

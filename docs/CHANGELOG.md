@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2026-09-04
+
+### Changed（兑换记录按时间倒序）
+- Rewards 兑换记录列表与 ParentDashboard 待审核列表均改为**最新在上**（`redeemedAt`/`created_at` 降序）
+- `supabaseApi.ts` 两处 redemptions 查询补 `.order('created_at', { ascending: false })`；渲染层兜底排序覆盖 localStorage 恢复等一切来源
+
+### Docs（项目文档梳理与收敛）
+- 新增 `docs/项目总览.md`：一页式总览（模块地图 / 数据库全景 / SQL 脚本执行矩阵 / 核心业务规则 / 文档导航），汇总 `docs/` 与 `sql/` 全部内容，取代此前多份散落的分析报告
+- 归档已完成使命的 6 份文档（项目分析报告、项目结构梳理与优化建议、PWA 评估与实施建议、手机号登录配置指南、产品优化建议书、上传 GitHub 指南）与 7 个 RLS 历史排障脚本（fix-infinite-recursion(-v2)/fix-rls-full/fix-rls-infinite-recursion/safe-fix-all/safe-rls-setup/fix-missing-functions）至 `.workbuddy/archive/2026-09-04-docs-sql-cleanup/`（git 亦有历史可恢复）
+- `docs/` 收敛为 4 份长期文档：设计规范 / 变更日志 / 项目历史 / 项目总览；`sql/` 收敛为 8 个现行脚本
+- README 同步修正：版本号 v2.1.0→v2.1.2、移除「手机号登录」特性行、初始化数据库补基线顺序与 status 急救指引、Schema 章节与文档索引指向项目总览、版本表补 v2.1.1/v2.1.2
+- SUPABASE_SETUP 同步修正：npm→pnpm、修复脚本引用改为项目总览执行矩阵、表清单补 custom_badges/data_backups/status 等现行结构
+
+## [2.1.2] - 2026-09-04
+
+### Removed（登录页移除手机号验证码登录）
+- 移除 Auth 页「手机登录」tab（发送验证码 / 验证码登录流程），原因：Supabase Phone provider 需付费短信服务，与邮箱登录并行存在增加了登录入口的复杂度
+- 移除项：`Smartphone`/`MessageSquareText` 图标 import、phoneData/isSendingOtp/otpSent/otpCountdown 状态、`handleSendOtp`/`handlePhoneLogin` 处理器、`<TabsTrigger value="phone">`、`<TabsContent value="phone">` 完整表单、`sendPhoneOtp`/`verifyPhoneOtp` 解构
+- 保留：`useAuth.tsx` 中的 `sendPhoneOtp`/`verifyPhoneOtp` 方法（接口未变），`docs/手机号登录配置指南.md`（随时可按指南恢复）
+- 注意：登录页其他功能（邮箱/用户名登录、注册、忘记密码、角色选择）保持不变
+
+## [2.1.1] - 2026-09-04
+
+### Fixed（兑换记录次日丢失 · ID 双轨错位根治）
+- **根因**：`addReward`/`redeemReward` 等本地生成 UUID，但云端 insert 不携带 id（由数据库另生成主键），造成「本地 id ≠ 云端 id」系统性错位：
+  - 兑换记录插入云端时 `reward_id` 外键指向不存在的本地 reward id → FK 违规 → 记录从未入库（仅 console.error，UI 无感知），次日从独立表重建 state 时兑换记录整体消失、积分重算"复原"
+  - 家长审核 `updateRedemptionStatus` 按本地 id 匹配云端 0 行 → 状态永远停在 pending，同样被次日重载覆盖
+- **修复 1（根治）**：所有 insert（tasks/categories/rewards/redemptions）显式携带前端生成的 id，本地与云端主键永久一致
+- **修复 2（阻断）**：`redeemReward` 云端插入失败时返回 false 阻断本地提交，杜绝"本地有、云端无"的脏状态
+- **修复 3（兜底）**：`updateRedemptionStatus` 返回 affected rows 数量，审核 0 行时自动触发 `refreshData()` 全量刷新对齐云端
+- **修复 4（实时）**：新增 redemptions 表 Realtime 订阅（此前缺失），家长审核后孩子端即时同步状态流转
+- 附带：`refreshData` 定义上移至兑换区块前（消除 TDZ 引用隐患）；单测夹具修复 `calculateTotalPoints` 快路径短路问题（18/18 通过）
+
+### Fixed（补充：兑换"确认"按钮静默无反应）
+- **现象**：修复 2 的"云端失败即阻断"暴露后，兑换存量奖品（修复前创建、本地 id 与云端错位，或云端奖品缺失）时 `reward_id` 外键 23503 违规 → `redeemReward` 返回 false → UI 无任何提示（弹窗不关、无 toast）
+- **修复 A（FK 兜底）**：`insertRedemption` 首次带 `reward_id` 插入失败且错误码为 23503 时，自动降级为 `reward_id = NULL` 重插——表内已冗余 `reward_name`/`points` 快照且 `reward_id` 可空（ON DELETE SET NULL），兑换记录与积分口径不受影响，仅牺牲云端奖品关联（本地 UI 仍按本地 state 匹配显示）
+- **修复 B（失败可见）**：`redeemReward` 返回结构化结果 `{ ok, reason: 'no-user' | 'insufficient' | 'cloud-error', message }`，Rewards 页失败时分别 toast 提示（未登录/积分不足/云端保存失败原因），不再静默
+
 ## [2.1.0] - 2026-08-19
 
 ### Changed（亮色乐园设计系统全站落地 · UI Designer）
