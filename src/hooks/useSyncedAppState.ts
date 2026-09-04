@@ -281,7 +281,8 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    const { error } = await insertTask(user.id, task);
+    // 显式携带本地 id 插入云端，保证本地与云端主键一致（否则后续 update/delete 会匹配 0 行）
+    const { error } = await insertTask(user.id, task, newTask.id);
     if (error) console.error('addTask: Supabase error:', error);
 
     setState(prev => ({
@@ -338,7 +339,7 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    const { error } = await insertPrimaryCategory(user.id, category);
+    const { error } = await insertPrimaryCategory(user.id, category, newCategory.id);
     if (error) console.error('addPrimaryCategory: Supabase error:', error);
 
     setState(prev => ({
@@ -396,7 +397,7 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    const { error } = await insertSecondaryCategory(user.id, category);
+    const { error } = await insertSecondaryCategory(user.id, category, newCategory.id);
     if (error) console.error('addSecondaryCategory: Supabase error:', error);
 
     setState(prev => ({
@@ -441,7 +442,7 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    const { error } = await insertTertiaryCategory(user.id, category);
+    const { error } = await insertTertiaryCategory(user.id, category, newCategory.id);
     if (error) console.error('addTertiaryCategory: Supabase error:', error);
 
     setState(prev => ({
@@ -557,8 +558,8 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    // 同步到 tasks 表（is_temporary=true，作业库中不展示）
-    const { error } = await insertTask(user.id, tempTask);
+    // 同步到 tasks 表（is_temporary=true，作业库中不展示；显式携带本地 id）
+    const { error } = await insertTask(user.id, tempTask, tempId);
     if (error) console.error('addTemporaryTaskToToday: Supabase error:', error);
 
     setState(prev => {
@@ -780,6 +781,56 @@ export const useSyncedAppState = () => {
   }, [user]);
 
   // ============================================
+  // 手动刷新（重新从独立表拉取；需定义在兑换审核之前，供其失败时兜底）
+  // ============================================
+  const refreshData = useCallback(async () => {
+    if (!user) return;
+
+    setIsLoading(true);
+    setHasSyncedOnLogin(false);
+
+    try {
+      const data = await fetchAllUserData(user.id);
+
+      if (hasIndependentData(data)) {
+        const convertedState = buildStateFromDb(data);
+        convertedState.totalPoints = calculateTotalPoints(convertedState);
+        saveState(convertedState);
+        setState(() => ({ ...convertedState }));
+      } else {
+        const backupData = await fetchLatestBackup(user.id);
+        if (backupData?.backup_data) {
+          const backup = backupData.backup_data as Record<string, unknown>;
+          const restoredState: AppState = {
+            primaryCategories: (backup.primaryCategories as AppState['primaryCategories']) || [],
+            secondaryCategories: (backup.secondaryCategories as AppState['secondaryCategories']) || [],
+            tertiaryCategories: (backup.tertiaryCategories as AppState['tertiaryCategories']) || [],
+            tasks: (backup.tasks as AppState['tasks']) || [],
+            dailyRecords: (backup.dailyRecords as AppState['dailyRecords']) || [],
+            rewards: (backup.rewards as AppState['rewards']) || [],
+            redemptions: (backup.redemptions as AppState['redemptions']) || [],
+            badges: (backup.badges as AppState['badges']) || [],
+            customBadges: (backup.customBadges as AppState['customBadges']) || [],
+            pointAdjustments: (backup.pointAdjustments as AppState['pointAdjustments']) || [],
+            totalPoints: (backup.totalPoints as number) || 0,
+            settings: (backup.settings as AppState['settings']) || { soundEnabled: true, lastVisitDate: getTodayStr() },
+          };
+          restoredState.totalPoints = calculateTotalPoints(restoredState);
+          saveState(restoredState);
+          setState(() => ({ ...restoredState }));
+        }
+      }
+
+      setHasSyncedOnLogin(true);
+    } catch (error) {
+      console.error('✗ 刷新数据失败:', error);
+      setHasSyncedOnLogin(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  // ============================================
   // 奖品与兑换
   // ============================================
   const addReward = useCallback(async (reward: Omit<Reward, 'id' | 'createdAt'>) => {
@@ -790,7 +841,9 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    const { error } = await insertReward(user.id, reward);
+    // 显式携带本地 id 插入云端：redemptions.reward_id 外键依赖该 id，
+    // 双轨 id 会导致兑换记录插入云端时 FK 违规而静默丢失（次日重载即消失）
+    const { error } = await insertReward(user.id, reward, newReward.id);
     if (error) console.error('addReward: Supabase error:', error);
 
     setState(prev => ({
@@ -821,10 +874,12 @@ export const useSyncedAppState = () => {
     }));
   }, [user]);
 
-  const redeemReward = useCallback(async (reward: Reward) => {
-    if (!user) return false;
+  const redeemReward = useCallback(async (reward: Reward): Promise<
+    { ok: boolean; reason?: 'no-user' | 'insufficient' | 'cloud-error'; message?: string }
+  > => {
+    if (!user) return { ok: false, reason: 'no-user' };
     // 兑换额度以「可用积分 = 总积分 - 冻结积分」为准
-    if (getAvailablePoints(state) < reward.points) return false;
+    if (getAvailablePoints(state) < reward.points) return { ok: false, reason: 'insufficient' };
 
     const redemptionId = crypto.randomUUID();
     const redemption: Redemption = {
@@ -836,8 +891,18 @@ export const useSyncedAppState = () => {
       status: 'pending', // 孩子发起兑换 → 待家长确认，积分冻结不扣分
     };
 
-    const { error } = await insertRedemption(user.id, { rewardId: reward.id, rewardName: reward.name, points: reward.points });
-    if (error) console.error('redeemReward: Supabase error:', error);
+    // 云端插入失败时阻断本地提交：否则兑换记录只在本地存在，
+    // 次日从独立表重建 state 时会整体丢失（积分也随之"复原"）
+    const { error } = await insertRedemption(user.id, {
+      id: redemptionId,
+      rewardId: reward.id,
+      rewardName: reward.name,
+      points: reward.points,
+    });
+    if (error) {
+      console.error('redeemReward: Supabase error:', error);
+      return { ok: false, reason: 'cloud-error', message: error.message };
+    }
 
     setState(prev => {
       let newState: AppState = {
@@ -850,7 +915,7 @@ export const useSyncedAppState = () => {
       return newState;
     });
 
-    return true;
+    return { ok: true };
   }, [user, state]);
 
   /** 家长审核：通过兑换（正式扣分） */
@@ -873,9 +938,15 @@ export const useSyncedAppState = () => {
 
     (async () => {
       try {
-        const { error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'approved');
+        const { count, error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'approved');
         if (updateError) {
           console.error('Failed to approve redemption:', updateError);
+          return;
+        }
+        if (count === 0) {
+          // 云端无此记录（双轨 id 遗留数据）：回滚本地状态并全量刷新
+          console.error('approveRedemption: 云端未找到兑换记录，触发全量刷新');
+          refreshData();
           return;
         }
         const { error: profileError } = await updateProfileTotalPoints(user.id, newState!.totalPoints);
@@ -887,7 +958,7 @@ export const useSyncedAppState = () => {
     })();
 
     return true;
-  }, [user, createBackup]);
+  }, [user, createBackup, refreshData]);
 
   /** 家长审核：驳回兑换（冻结退还，不扣分） */
   const rejectRedemption = useCallback(async (redemptionId: string) => {
@@ -909,9 +980,14 @@ export const useSyncedAppState = () => {
 
     (async () => {
       try {
-        const { error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'rejected');
+        const { count, error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'rejected');
         if (updateError) {
           console.error('Failed to reject redemption:', updateError);
+          return;
+        }
+        if (count === 0) {
+          console.error('rejectRedemption: 云端未找到兑换记录，触发全量刷新');
+          refreshData();
           return;
         }
         await createBackup(newState!, '驳回兑换申请');
@@ -921,7 +997,7 @@ export const useSyncedAppState = () => {
     })();
 
     return true;
-  }, [user, createBackup]);
+  }, [user, createBackup, refreshData]);
 
   /** 家长确认：奖品已兑现 */
   const fulfillRedemption = useCallback(async (redemptionId: string) => {
@@ -934,10 +1010,18 @@ export const useSyncedAppState = () => {
       return { ...prev, redemptions: newRedemptions };
     });
 
-    const { error } = await updateRedemptionStatus(user.id, redemptionId, 'fulfilled');
-    if (error) console.error('Failed to fulfill redemption:', error);
-    return !error;
-  }, [user]);
+    const { count, error } = await updateRedemptionStatus(user.id, redemptionId, 'fulfilled');
+    if (error) {
+      console.error('Failed to fulfill redemption:', error);
+      return false;
+    }
+    if (count === 0) {
+      console.error('fulfillRedemption: 云端未找到兑换记录，触发全量刷新');
+      refreshData();
+      return false;
+    }
+    return true;
+  }, [user, refreshData]);
 
   const deleteRedemption = useCallback(async (redemptionId: string) => {
     if (!user) return false;
@@ -1262,56 +1346,6 @@ export const useSyncedAppState = () => {
   }, [state, getTodayRecord]);
 
   // ============================================
-  // 手动刷新（重新从独立表拉取）
-  // ============================================
-  const refreshData = useCallback(async () => {
-    if (!user) return;
-
-    setIsLoading(true);
-    setHasSyncedOnLogin(false);
-
-    try {
-      const data = await fetchAllUserData(user.id);
-
-      if (hasIndependentData(data)) {
-        const convertedState = buildStateFromDb(data);
-        convertedState.totalPoints = calculateTotalPoints(convertedState);
-        saveState(convertedState);
-        setState(() => ({ ...convertedState }));
-      } else {
-        const backupData = await fetchLatestBackup(user.id);
-        if (backupData?.backup_data) {
-          const backup = backupData.backup_data as Record<string, unknown>;
-          const restoredState: AppState = {
-            primaryCategories: (backup.primaryCategories as AppState['primaryCategories']) || [],
-            secondaryCategories: (backup.secondaryCategories as AppState['secondaryCategories']) || [],
-            tertiaryCategories: (backup.tertiaryCategories as AppState['tertiaryCategories']) || [],
-            tasks: (backup.tasks as AppState['tasks']) || [],
-            dailyRecords: (backup.dailyRecords as AppState['dailyRecords']) || [],
-            rewards: (backup.rewards as AppState['rewards']) || [],
-            redemptions: (backup.redemptions as AppState['redemptions']) || [],
-            badges: (backup.badges as AppState['badges']) || [],
-            customBadges: (backup.customBadges as AppState['customBadges']) || [],
-            pointAdjustments: (backup.pointAdjustments as AppState['pointAdjustments']) || [],
-            totalPoints: (backup.totalPoints as number) || 0,
-            settings: (backup.settings as AppState['settings']) || { soundEnabled: true, lastVisitDate: getTodayStr() },
-          };
-          restoredState.totalPoints = calculateTotalPoints(restoredState);
-          saveState(restoredState);
-          setState(() => ({ ...restoredState }));
-        }
-      }
-
-      setHasSyncedOnLogin(true);
-    } catch (error) {
-      console.error('✗ 刷新数据失败:', error);
-      setHasSyncedOnLogin(true);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user]);
-
-  // ============================================
   // Realtime 订阅（清理旧订阅后重建）
   // ============================================
   useEffect(() => {
@@ -1328,6 +1362,7 @@ export const useSyncedAppState = () => {
       },
       onPointAdjustmentsChange: () => refreshData(),
       onCategoriesChange: () => refreshData(),
+      onRedemptionsChange: () => refreshData(),
     });
     subscriptionsRef.current = unsubscribers;
   }, [user, hasSyncedOnLogin, refreshData]);

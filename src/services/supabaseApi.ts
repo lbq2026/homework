@@ -160,7 +160,7 @@ export const fetchAllUserData = async (userId: string): Promise<UserDataResult> 
     supabase.from('tasks').select('*').eq('user_id', userId),
     supabase.from('daily_records').select('*').eq('user_id', userId),
     supabase.from('rewards').select('*').eq('user_id', userId),
-    supabase.from('redemptions').select('*').eq('user_id', userId),
+    supabase.from('redemptions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     supabase.from('badges').select('*').eq('user_id', userId),
     supabase.from('point_adjustments').select('*').eq('user_id', userId),
     supabase.from('custom_badges').select('*').eq('user_id', userId),
@@ -240,7 +240,7 @@ export const fetchChildData = async (childId: string): Promise<UserDataResult | 
     supabase.from('tasks').select('*').eq('user_id', childId),
     supabase.from('daily_records').select('*').eq('user_id', childId),
     supabase.from('rewards').select('*').eq('user_id', childId),
-    supabase.from('redemptions').select('*').eq('user_id', childId),
+    supabase.from('redemptions').select('*').eq('user_id', childId).order('created_at', { ascending: false }),
     supabase.from('badges').select('*').eq('user_id', childId),
     supabase.from('point_adjustments').select('*').eq('user_id', childId),
     supabase.from('custom_badges').select('*').eq('user_id', childId),
@@ -300,9 +300,14 @@ export const buildStateFromDb = (data: UserDataResult): AppState => {
 
 // ============================================
 // 写入：各类业务操作（与 useSyncedAppState 原逻辑一一对应）
+// 注意：insert 均显式携带前端生成的 id（与本地 state 保持一致）。
+// 此前不传 id 时由数据库另行生成主键，导致「本地 id ≠ 云端 id」，
+// 后续 update/delete 按本地 id 匹配云端 0 行静默失败，
+// 外键（如 redemptions.reward_id）也会因指向不存在的 id 而插入失败。
 // ============================================
-export const insertTask = (userId: string, task: Omit<Task, 'id' | 'createdAt'>) =>
+export const insertTask = (userId: string, task: Omit<Task, 'id' | 'createdAt'>, taskId: string) =>
   supabase.from('tasks').insert({
+    id: taskId,
     user_id: userId,
     name: task.name,
     base_points: task.basePoints,
@@ -327,8 +332,9 @@ export const updateTask = (taskId: string, updates: Partial<Task>) =>
 export const softDeleteTask = (taskId: string) =>
   supabase.from('tasks').update({ is_active: false }).eq('id', taskId);
 
-export const insertPrimaryCategory = (userId: string, category: Omit<PrimaryCategory, 'id' | 'createdAt'>) =>
+export const insertPrimaryCategory = (userId: string, category: Omit<PrimaryCategory, 'id' | 'createdAt'>, categoryId: string) =>
   supabase.from('primary_categories').insert({
+    id: categoryId,
     user_id: userId,
     name: category.name,
     icon: category.icon,
@@ -345,8 +351,9 @@ export const updatePrimaryCategory = (categoryId: string, updates: Partial<Prima
 export const deletePrimaryCategory = (categoryId: string) =>
   supabase.from('primary_categories').delete().eq('id', categoryId);
 
-export const insertSecondaryCategory = (userId: string, category: Omit<SecondaryCategory, 'id' | 'createdAt'>) =>
+export const insertSecondaryCategory = (userId: string, category: Omit<SecondaryCategory, 'id' | 'createdAt'>, categoryId: string) =>
   supabase.from('secondary_categories').insert({
+    id: categoryId,
     user_id: userId,
     name: category.name,
     icon: category.icon,
@@ -363,8 +370,9 @@ export const updateSecondaryCategory = (categoryId: string, updates: Partial<Sec
 export const deleteSecondaryCategory = (categoryId: string) =>
   supabase.from('secondary_categories').delete().eq('id', categoryId);
 
-export const insertTertiaryCategory = (userId: string, category: Omit<TertiaryCategory, 'id' | 'createdAt'>) =>
+export const insertTertiaryCategory = (userId: string, category: Omit<TertiaryCategory, 'id' | 'createdAt'>, categoryId: string) =>
   supabase.from('tertiary_categories').insert({
+    id: categoryId,
     user_id: userId,
     name: category.name,
     icon: category.icon,
@@ -394,15 +402,16 @@ export const upsertDailyRecord = (userId: string, date: string, tasks: DailyTask
     total_points: totalPoints,
   }, { onConflict: 'user_id,date' });
 
-export const insertReward = (userId: string, reward: Omit<Reward, 'id' | 'createdAt'>) =>
+export const insertReward = (userId: string, reward: Omit<Reward, 'id' | 'createdAt'>, rewardId: string) =>
   supabase.from('rewards').insert({
+    id: rewardId,
     user_id: userId,
     name: reward.name,
     points: reward.points,
     icon: reward.icon,
     description: reward.description,
     category: reward.category,
-  });
+  }).select().single();
 
 export const updateReward = (rewardId: string, updates: Partial<Reward>) =>
   supabase.from('rewards').update({
@@ -416,18 +425,59 @@ export const updateReward = (rewardId: string, updates: Partial<Reward>) =>
 export const deleteReward = (rewardId: string) =>
   supabase.from('rewards').delete().eq('id', rewardId);
 
-export const insertRedemption = (userId: string, redemption: { rewardId: string; rewardName: string; points: number }) =>
-  supabase.from('redemptions').insert({
+export const insertRedemption = async (userId: string, redemption: { id: string; rewardId: string; rewardName: string; points: number }) => {
+  const payload = {
+    id: redemption.id,
     user_id: userId,
     reward_id: redemption.rewardId,
     reward_name: redemption.rewardName,
     points: redemption.points,
-    status: 'pending', // 孩子发起兑换 → 待家长确认，积分冻结
-  }).select().single();
+    status: 'pending' as const, // 孩子发起兑换 → 待家长确认，积分冻结
+  };
 
-/** 更新兑换状态（家长审核：approved/fulfilled/rejected） */
-export const updateRedemptionStatus = (userId: string, redemptionId: string, status: Redemption['status']) =>
-  supabase.from('redemptions').update({ status }).eq('id', redemptionId).eq('user_id', userId);
+  const first = await supabase.from('redemptions').insert(payload).select().single();
+
+  // 异常处理：区分常见的两种 schema 不匹配，给出可执行的修复指引
+  // - 42703（undefined_column）：表缺列 → 需要执行 status 迁移脚本
+  // - 23503（foreign_key_violation）：外键缺失 → 存量奖品云端缺失，降级重插
+  const err = first.error as (null | { code?: string; message?: string });
+  if (err) {
+    const msg = err.message ?? '';
+
+    // 场景 1：status 列不存在 —— 通常是没跑 now-phase-trust-fix.sql
+    if (err.code === '42703' && /status/i.test(msg)) {
+      console.error(
+        '[insertRedemption] 数据库 redemptions 表缺 status 列。\n' +
+        '请在 Supabase Dashboard → SQL Editor 执行 sql/now-phase-trust-fix.sql（含 status 字段、is_parent() 函数、redemptions RLS 重建）。',
+      );
+      return first;
+    }
+
+    // 场景 2：reward_id 外键不存在 —— 存量奖品云端缺失，降级重插
+    if (err.code === '23503') {
+      console.warn('insertRedemption: reward_id 外键不存在（云端奖品缺失），降级为不关联奖品重插');
+      return supabase.from('redemptions').insert({
+        ...payload,
+        reward_id: null as unknown as string, // DB 列 reward_id 实际可空，类型未对齐故断言
+      }).select().single();
+    }
+  }
+
+  return first;
+};
+
+/** 更新兑换状态（家长审核：approved/fulfilled/rejected）。
+ *  返回 affected rows 数量：0 表示本地 id 在云端不存在（双轨 id 遗留数据），
+ *  调用方可据此提示并触发全量刷新，避免“本地已审核、云端仍 pending”。 */
+export const updateRedemptionStatus = async (userId: string, redemptionId: string, status: Redemption['status']) => {
+  const { data, error } = await supabase
+    .from('redemptions')
+    .update({ status })
+    .eq('id', redemptionId)
+    .eq('user_id', userId)
+    .select('id');
+  return { count: data?.length ?? 0, error };
+};
 
 export const deleteRedemption = (userId: string, redemptionId: string) =>
   supabase.from('redemptions').delete().eq('id', redemptionId).eq('user_id', userId);
@@ -587,12 +637,13 @@ export interface ChangeHandlers {
   onProfileChange?: (totalPoints: number) => void;
   onPointAdjustmentsChange?: () => void;
   onCategoriesChange?: () => void;
+  onRedemptionsChange?: () => void;
 }
 
 /** 建立用户相关表的实时订阅，返回取消订阅函数数组 */
 export const subscribeToChanges = (userId: string, handlers: ChangeHandlers): Array<() => void> => {
   const unsubscribers: Array<() => void> = [];
-  const { onTasksChange, onDailyRecordsChange, onProfileChange, onPointAdjustmentsChange, onCategoriesChange } = handlers;
+  const { onTasksChange, onDailyRecordsChange, onProfileChange, onPointAdjustmentsChange, onCategoriesChange, onRedemptionsChange } = handlers;
 
   if (onTasksChange) {
     const sub = supabase
@@ -639,6 +690,16 @@ export const subscribeToChanges = (userId: string, handlers: ChangeHandlers): Ar
         .subscribe();
       unsubscribers.push(() => sub.unsubscribe());
     });
+  }
+
+  // 兑换记录变更（孩子发起兑换 / 家长审核状态流转）→ 全量刷新，
+  // 此前缺失订阅导致家长端审核后孩子端不更新，次日重载状态被云端 pending 覆盖
+  if (onRedemptionsChange) {
+    const sub = supabase
+      .channel('redemptions-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'redemptions', filter: `user_id=eq.${userId}` }, () => onRedemptionsChange())
+      .subscribe();
+    unsubscribers.push(() => sub.unsubscribe());
   }
 
   return unsubscribers;

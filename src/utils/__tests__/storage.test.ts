@@ -37,15 +37,18 @@ const makeState = (overrides: Partial<AppState> = {}): AppState => ({
   ...overrides,
 });
 
-/** 构造一个已完成/未完成的每日记录 */
-const makeDailyRecord = (date: string, tasks: Array<{ taskId: string; completed?: boolean }>) => ({
+/** 构造一个已完成/未完成的每日记录（totalPoints 默认按任务完成态自洽计算） */
+const makeDailyRecord = (date: string, tasks: Array<{ taskId: string; completed?: boolean }>, totalPoints?: number) => ({
   date,
   tasks: tasks.map(t => ({
     id: `dt-${date}-${t.taskId}`,
     taskId: t.taskId,
     completed: t.completed ?? false,
   })),
-  totalPoints: 0,
+  // calculateTotalPoints 对 totalPoints 有值的记录走缓存快路径；
+  // 派生回退分支（按任务定义逐个累计）服务于旧数据/无缓存记录，
+  // 因此默认传 undefined 触发派生计算，与生产语义保持一致。
+  totalPoints: totalPoints as unknown as number,
 });
 
 describe('calculateTotalPoints', () => {

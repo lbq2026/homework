@@ -24,7 +24,9 @@ export const ParentDashboard = () => {
   const todayDone = todayRecord?.tasks.filter(t => t.completed).length || 0;
   const todayTotal = todayRecord?.tasks.length || 0;
   const weekly = getWeeklyReport(state);
-  const pendingRedemptions = state.redemptions.filter(r => r.status === 'pending');
+  const pendingRedemptions = state.redemptions
+    .filter(r => r.status === 'pending')
+    .sort((a, b) => b.redeemedAt - a.redeemedAt);
 
   useEffect(() => {
     if (user) {

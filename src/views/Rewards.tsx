@@ -109,13 +109,26 @@ export const Rewards = () => {
 
   const handleRedeem = async () => {
     if (showRedeemConfirm) {
-      const success = await redeemReward(showRedeemConfirm);
-      if (success) {
+      const result = await redeemReward(showRedeemConfirm);
+      if (result.ok) {
         toast.success(`兑换申请已提交: ${showRedeemConfirm.name}`, {
           description: `待家长确认后扣减 ${showRedeemConfirm.points} 积分`,
           icon: '🎉',
         });
         setShowRedeemConfirm(null);
+      } else if (result.reason === 'insufficient') {
+        toast.error('积分不足，无法兑换这个奖品', { icon: '😢' });
+      } else if (result.reason === 'no-user') {
+        toast.error('请先登录后再兑换', { icon: '🔒' });
+      } else {
+        // cloud-error：保留弹窗，提示用户稍后重试（避免本地写入假数据，次日被云端覆盖丢失）
+        const hint = /status/i.test(result.message || '')
+          ? '数据库缺 status 列，请执行 sql/fix-redemption-status-only.sql（详见 console）'
+          : '为确保记录不丢失，未成功同步到云端前不会本地确认';
+        toast.error(`兑换保存失败，请稍后重试${result.message ? `：${result.message}` : ''}`, {
+          description: hint,
+          icon: '⚠️',
+        });
       }
     }
   };
@@ -127,6 +140,10 @@ export const Rewards = () => {
 
   // 按积分排序奖品
   const sortedRewards = [...state.rewards].sort((a, b) => a.points - b.points);
+
+  // 兑换记录按时间倒序（最新在最上面）——渲染层兜底排序，
+  // 覆盖云端重载 / localStorage 恢复等一切数据来源
+  const sortedRedemptions = [...state.redemptions].sort((a, b) => b.redeemedAt - a.redeemedAt);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -228,7 +245,7 @@ export const Rewards = () => {
           </TabsContent>
 
           <TabsContent value="history" className="mt-0">
-            {state.redemptions.length === 0 ? (
+            {sortedRedemptions.length === 0 ? (
               <div className="bg-white rounded-card p-8 text-center shadow-card border border-neutral-100">
                 <div className="text-6xl mb-4">📜</div>
                 <h3 className="font-medium text-neutral-600 mb-2">还没有兑换记录</h3>
@@ -237,7 +254,7 @@ export const Rewards = () => {
             ) : (
               <div className="space-y-3">
                 <AnimatePresence>
-                  {state.redemptions.map((redemption, index) => {
+                  {sortedRedemptions.map((redemption, index) => {
                     const status = redemption.status || 'approved';
                     const meta = STATUS_META[status];
                     return (
