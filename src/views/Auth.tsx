@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeOff, Sparkles, Shield, Smile, Smartphone, MessageSquareText } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Sparkles, Shield, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,7 @@ interface AuthProps {
 }
 
 export const Auth = ({ onLoginSuccess }: AuthProps) => {
-  const { signIn, signInWithUsername, signUp, resetPassword, sendPhoneOtp, verifyPhoneOtp, isConfigured } = useAuth();
+  const { signIn, signInWithUsername, signUp, resetPassword, isConfigured } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,12 +21,6 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
-  // 手机号登录
-  const [phoneData, setPhoneData] = useState({ phone: '', otp: '' });
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCountdown, setOtpCountdown] = useState(0);
-  
   // 登录表单
   const [loginData, setLoginData] = useState({
     email: '',
@@ -59,52 +53,6 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
       setError(error.message);
     } else {
       setResetSent(true);
-    }
-  };
-
-  // 发送手机验证码
-  const handleSendOtp = async () => {
-    const phoneRegex = /^1[3-9]\d{9}$/;
-    if (!phoneRegex.test(phoneData.phone)) {
-      setError('请输入正确的手机号');
-      return;
-    }
-    setError(null);
-    setIsSendingOtp(true);
-    const { error } = await sendPhoneOtp(phoneData.phone);
-    setIsSendingOtp(false);
-    if (error) {
-      setError(`验证码发送失败：${error.message}`);
-      return;
-    }
-    setOtpSent(true);
-    setOtpCountdown(60);
-    const timer = setInterval(() => {
-      setOtpCountdown(c => {
-        if (c <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
-  };
-
-  // 手机验证码登录
-  const handlePhoneLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phoneData.otp.trim()) {
-      setError('请输入验证码');
-      return;
-    }
-    setError(null);
-    setIsLoading(true);
-    const { error } = await verifyPhoneOtp(phoneData.phone, phoneData.otp.trim());
-    setIsLoading(false);
-    if (error) {
-      setError(`登录失败：${error.message}`);
-    } else {
-      onLoginSuccess();
     }
   };
 
@@ -214,7 +162,6 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="login">登录</TabsTrigger>
-              <TabsTrigger value="phone">手机登录</TabsTrigger>
               <TabsTrigger value="register">注册</TabsTrigger>
             </TabsList>
 
@@ -358,83 +305,6 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
                         </p>
                       )}
                     </motion.form>
-                  )}
-                </motion.form>
-              </TabsContent>
-
-              {/* 手机验证码登录 */}
-              <TabsContent value="phone">
-                <motion.form
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  onSubmit={handlePhoneLogin}
-                  className="space-y-4"
-                >
-                  <div>
-                    <Label htmlFor="phone-number">手机号</Label>
-                    <div className="relative mt-1">
-                      <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <Input
-                        id="phone-number"
-                        type="tel"
-                        placeholder="请输入手机号"
-                        value={phoneData.phone}
-                        onChange={(e) => setPhoneData({ ...phoneData, phone: e.target.value })}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="phone-otp">验证码</Label>
-                    <div className="relative mt-1">
-                      <MessageSquareText className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <Input
-                        id="phone-otp"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="6 位验证码"
-                        value={phoneData.otp}
-                        onChange={(e) => setPhoneData({ ...phoneData, otp: e.target.value })}
-                        className="pl-10 pr-24"
-                        required
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSendOtp}
-                        disabled={isSendingOtp || otpCountdown > 0}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-brand-500 text-caption font-bold"
-                      >
-                        {otpCountdown > 0 ? `${otpCountdown}s` : isSendingOtp ? '发送中...' : otpSent ? '重新发送' : '获取验证码'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-semantic-danger text-body text-center bg-semantic-danger-soft p-2 rounded-card"
-                    >
-                      {error}
-                    </motion.div>
-                  )}
-
-                  <Button
-                    type="submit"
-                    className="w-full bg-brand-500 hover:bg-brand-400 text-white rounded-button shadow-button py-6"
-                    disabled={isLoading || !otpSent}
-                  >
-                    {isLoading ? '登录中...' : '验证码登录'}
-                  </Button>
-                  {!otpSent && (
-                    <p className="text-caption text-neutral-400 text-center">
-                      需先在 Supabase 启用手机号认证并配置短信服务
-                    </p>
                   )}
                 </motion.form>
               </TabsContent>
