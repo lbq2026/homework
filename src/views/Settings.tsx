@@ -308,7 +308,7 @@ export const Settings = () => {
 
         {/* 版本信息 */}
         <div className="text-center text-caption text-neutral-400 pt-4">
-          <p>小勇士积分王国 v1.1</p>
+          <p>小勇士积分王国 v2.2.0</p>
           <p className="mt-1">让作业变得有趣 🌟</p>
         </div>
       </div>

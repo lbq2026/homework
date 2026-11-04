@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -19,6 +19,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, metadata?: { username?: string; role?: UserRole }) => Promise<{ error: Error | null; user?: User | null }>;
   /** 家长通过 RPC 直接创建子账号（不触发 signUp 邮件速率限制） */
   createChildAccount: (username: string, password: string, parentId: string) => Promise<{ error: Error | null; childEmail?: string }>;
+  /** 查询当前登录用户在 profiles.role 的角色；未登录或查询失败返回 null（登录落地用） */
+  fetchUserRole: () => Promise<UserRole | null>;
   signOut: () => Promise<void>;
   /** 手机号验证码登录：发送验证码 */
   sendPhoneOtp: (phone: string) => Promise<{ error: Error | null }>;
@@ -39,21 +41,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isConfigured = isSupabaseConfigured();
 
   // 加载用户角色（profiles.role），失败时回退到注册元数据
+  const loadedRoleFor = useRef<string | null>(null);
+  const loadingRoleFor = useRef<string | null>(null);
   const loadRole = useCallback(async (userId: string, fallbackRole?: UserRole) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .single();
-      if (!error && data) {
-        setRole(data.role);
-        return;
+    // 成功加载过的用户不再重复请求，避免 getSession/onAuthStateChange/signIn 重复触发；
+    // 进行中的请求同样去重。成功标记在拿到角色后才写入：
+    // 查询失败（网络瞬断等）不标记，下一个 auth 事件（如 token 刷新）可重试自愈
+    if (loadedRoleFor.current === userId || loadingRoleFor.current === userId) return;
+    loadingRoleFor.current = userId;
+
+    const fetchRole = async (): Promise<UserRole | null> => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .single();
+        if (!error && data) return data.role as UserRole;
+      } catch {
+        // ignore, retry below
       }
-    } catch {
-      // ignore, fallback below
+      return null;
+    };
+
+    let role = await fetchRole();
+    if (!role) {
+      // 请求可能被页面刷新/HMR/网络抖动中断，稍候重试一次
+      await new Promise(resolve => setTimeout(resolve, 500));
+      role = await fetchRole();
     }
-    setRole(fallbackRole ?? null);
+    loadingRoleFor.current = null;
+    if (role) {
+      loadedRoleFor.current = userId;
+      setRole(role);
+    } else {
+      // 两次均失败：落到注册元数据兜底，但不写成功标记，后续 auth 事件可重新查询
+      setRole(fallbackRole ?? null);
+    }
   }, []);
 
   useEffect(() => {
@@ -80,6 +104,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loadRole(session.user.id, metaRole === 'parent' ? 'parent' : metaRole === 'child' ? 'child' : undefined);
       } else {
         setRole(null);
+        loadedRoleFor.current = null;
+        loadingRoleFor.current = null;
       }
     });
 
@@ -130,6 +156,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { error: new Error(error?.message || '创建失败') };
     }
     return { error: null, childEmail: data.email };
+  }, []);
+
+  // 查询当前登录用户角色（用于登录成功后按角色落地）
+  const fetchUserRole = useCallback(async (): Promise<UserRole | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      if (!error && data) return data.role as UserRole;
+    } catch {
+      // 查询失败按无角色处理
+    }
+    return null;
   }, []);
 
   const signUp = useCallback(async (
@@ -207,6 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sendPhoneOtp,
     verifyPhoneOtp,
     createChildAccount,
+    fetchUserRole,
     resetPassword,
     updatePassword,
     updateProfile,

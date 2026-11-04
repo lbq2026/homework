@@ -23,6 +23,7 @@ import type {
   CustomBadge,
 } from '@/types';
 import { loadState } from '@/utils/storage';
+import type { ChildRedemptionRow } from '@/utils/childOverview';
 
 // ============================================
 // 行类型（数据库）
@@ -36,7 +37,7 @@ type RewardRow = Database['public']['Tables']['rewards']['Row'];
 type RedemptionRow = Database['public']['Tables']['redemptions']['Row'];
 type BadgeRow = Database['public']['Tables']['badges']['Row'];
 type PointAdjustmentRow = Database['public']['Tables']['point_adjustments']['Row'];
-type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+export type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type CustomBadgeRow = Database['public']['Tables']['custom_badges']['Row'];
 
 // ============================================
@@ -200,8 +201,10 @@ export const hasIndependentData = (data: UserDataResult): boolean => {
 // 多孩子档案（P1-4）
 // ============================================
 
-/** 查询家长名下的孩子档案（profiles.parent_id = parentId） */
-export const fetchChildren = async (parentId: string): Promise<ProfileRow[]> => {
+/** 查询家长名下的孩子档案；保留错误信息，供积分管理页区分空态与加载失败 */
+export const fetchChildrenResult = async (
+  parentId: string,
+): Promise<{ data: ProfileRow[]; error: Error | null }> => {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
@@ -209,9 +212,15 @@ export const fetchChildren = async (parentId: string): Promise<ProfileRow[]> => 
     .order('created_at', { ascending: true });
   if (error) {
     console.error('fetchChildren error:', error);
-    return [];
+    return { data: [], error: new Error(error.message) };
   }
-  return data ?? [];
+  return { data: data ?? [], error: null };
+};
+
+/** 查询家长名下的孩子档案（profiles.parent_id = parentId） */
+export const fetchChildren = async (parentId: string): Promise<ProfileRow[]> => {
+  const { data } = await fetchChildrenResult(parentId);
+  return data;
 };
 
 /** 建立亲子关联：将孩子 profile.parent_id 设为家长 id */
@@ -538,6 +547,26 @@ export const deletePointAdjustment = (id: string, userId: string) =>
 export const updateProfileTotalPoints = (userId: string, totalPoints: number) =>
   supabase.from('profiles').update({ total_points: totalPoints }).eq('id', userId);
 
+// 家长写孩子积分：走 SECURITY DEFINER RPC（服务端校验 is_parent_of 并同步总分）
+export const adjustChildPointsRpc = (childId: string, points: number, reason: string) =>
+  supabase.rpc('adjust_child_points', {
+    p_child_id: childId,
+    p_points: points,
+    p_reason: reason,
+  });
+
+export const updateChildPointAdjustmentRpc = (adjustmentId: string, points: number, reason: string) =>
+  supabase.rpc('update_child_point_adjustment', {
+    p_adjustment_id: adjustmentId,
+    p_points: points,
+    p_reason: reason,
+  });
+
+export const deleteChildPointAdjustmentRpc = (adjustmentId: string) =>
+  supabase.rpc('delete_child_point_adjustment', {
+    p_adjustment_id: adjustmentId,
+  });
+
 // ============================================
 // 备份表：读取最新备份 / 本地数据上传
 // ============================================
@@ -703,4 +732,96 @@ export const subscribeToChanges = (userId: string, handlers: ChangeHandlers): Ar
   }
 
   return unsubscribers;
+};
+
+// ============================================
+// 家长控制（方案 C）：跨孩子读 + 管理动作 RPC
+// ============================================
+
+/** 家长批量读取名下孩子的待审核兑换（读走 RLS） */
+export const fetchPendingRedemptions = async (
+  childIds: string[],
+): Promise<ChildRedemptionRow[]> => {
+  if (childIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('redemptions')
+    .select('id, user_id, reward_name, points, status, created_at')
+    .in('user_id', childIds)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('fetchPendingRedemptions error:', error);
+    return [];
+  }
+  return data ?? [];
+};
+
+/** 编辑孩子资料（昵称 + 头像 emoji），RPC 内校验亲子关系与昵称占用 */
+export const updateChildProfileRpc = (
+  childId: string,
+  username: string,
+  avatar: string | null,
+) =>
+  supabase.rpc('update_child_profile', {
+    p_child_id: childId,
+    p_username: username,
+    p_avatar: avatar,
+  });
+
+/** 重置孩子登录密码（RPC 内同时清除孩子会话，旧登录立即失效） */
+export const resetChildPasswordRpc = (childId: string, newPassword: string) =>
+  supabase.rpc('reset_child_password', {
+    p_child_id: childId,
+    p_new_password: newPassword,
+  });
+
+/** 解绑孩子（parent_id 置空，账号与数据保留） */
+export const unbindChildRpc = (childId: string) =>
+  supabase.rpc('unbind_child', { p_child_id: childId });
+
+/** 绑定已有孩子账号（按登录邮箱，RPC 内校验角色/归属/不能绑自己） */
+export const bindExistingChildRpc = (childEmail: string) =>
+  supabase.rpc('bind_existing_child', { p_child_email: childEmail });
+
+/** 兑换审批：true→fulfilled 且扣积分；false→rejected 冻结退回 */
+export const approveRedemptionRpc = (redemptionId: string, approve: boolean) =>
+  supabase.rpc('approve_redemption', {
+    p_redemption_id: redemptionId,
+    p_approve: approve,
+  });
+
+/** 下发复制：作业(三级分类)/奖品/徽章 → 指定孩子，分类沿父链自动补齐；返回各类实际新增数 */
+export const dispatchToChildRpc = (
+  childId: string,
+  taskIds: string[],
+  rewardIds: string[],
+  badgeIds: string[],
+) =>
+  supabase.rpc('dispatch_to_child', {
+    p_child_id: childId,
+    p_task_ids: taskIds.length > 0 ? taskIds : null,
+    p_reward_ids: rewardIds.length > 0 ? rewardIds : null,
+    p_badge_ids: badgeIds.length > 0 ? badgeIds : null,
+  });
+
+/** 家长替孩子删模板：p_table ∈ tasks|rewards|custom_badges|primary/secondary/tertiary_categories */
+export const deleteChildTemplateRpc = (childId: string, table: string, itemId: string) =>
+  supabase.rpc('delete_child_template', {
+    p_child_id: childId,
+    p_table: table,
+    p_item_id: itemId,
+  });
+
+/** 拉孩子端作业/奖品/徽章名称集合，用于下发对话框「已下发」禁勾标记 */
+export const fetchChildTemplateNames = async (childId: string) => {
+  const [{ data: taskRows }, { data: rewardRows }, { data: badgeRows }] = await Promise.all([
+    supabase.from('tertiary_categories').select('name').eq('user_id', childId),
+    supabase.from('rewards').select('name').eq('user_id', childId),
+    supabase.from('custom_badges').select('name').eq('user_id', childId),
+  ]);
+  return {
+    taskNames: (taskRows ?? []).map((r) => r.name),
+    rewardNames: (rewardRows ?? []).map((r) => r.name),
+    badgeNames: (badgeRows ?? []).map((r) => r.name),
+  };
 };

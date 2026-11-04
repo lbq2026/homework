@@ -639,6 +639,8 @@ export const Tasks = () => {
                                             >
                                               <Edit2 className="w-3 h-3" />
                                             </Button>
+                                              </>
+                                            )}
                                             <Button
                                               variant="ghost"
                                               size="sm"
@@ -647,8 +649,6 @@ export const Tasks = () => {
                                             >
                                               <Trash2 className="w-3 h-3" />
                                             </Button>
-                                              </>
-                                            )}
                                           </div>
                                         </div>
                                       ))}

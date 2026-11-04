@@ -21,6 +21,7 @@ import {
   MAKEUP_CARD_PRICE,
 } from '@/utils/storage';
 import { playSuccessSound, playPointSound, playBadgeSound, playRedeemSound } from '@/utils/sound';
+import { toast } from 'sonner';
 import { useAuth } from './useAuth.tsx';
 import { useDataBackup } from './useDataBackup.ts';
 import { getTodayStr, getYesterdayStr } from '@/utils/date';
@@ -56,8 +57,6 @@ import {
   upsertCustomBadgeUnlock,
   deleteCustomBadgeUnlock,
   insertPointAdjustment,
-  updatePointAdjustment,
-  deletePointAdjustment as deletePointAdjustmentApi,
   updateProfileTotalPoints,
   subscribeToChanges,
 } from '@/services/supabaseApi';
@@ -281,9 +280,15 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
-    // 显式携带本地 id 插入云端，保证本地与云端主键一致（否则后续 update/delete 会匹配 0 行）
+    // 显式携带本地 id 插入云端，保证本地与云端主键一致（否则后续 update/delete 会匹配 0 行）。
+    // 云端插入失败时阻断本地提交（与 redeemReward 策略一致）：
+    // 否则任务仅存在于本地，刷新后从独立表重建 state 时会整体丢失
     const { error } = await insertTask(user.id, task, newTask.id);
-    if (error) console.error('addTask: Supabase error:', error);
+    if (error) {
+      console.error('addTask: Supabase error:', error);
+      toast.error('作业保存失败，请稍后重试', { description: error.message, icon: '⚠️' });
+      return;
+    }
 
     setState(prev => ({
       ...prev,
@@ -442,8 +447,13 @@ export const useSyncedAppState = () => {
       createdAt: Date.now(),
     };
 
+    // 云端插入失败时阻断本地提交（与 redeemReward 策略一致）：否则记录仅存本地，刷新后丢失
     const { error } = await insertTertiaryCategory(user.id, category, newCategory.id);
-    if (error) console.error('addTertiaryCategory: Supabase error:', error);
+    if (error) {
+      console.error('addTertiaryCategory: Supabase error:', error);
+      toast.error('作业项保存失败，请稍后重试', { description: error.message, icon: '⚠️' });
+      return;
+    }
 
     setState(prev => ({
       ...prev,
@@ -918,14 +928,14 @@ export const useSyncedAppState = () => {
     return { ok: true };
   }, [user, state]);
 
-  /** 家长审核：通过兑换（正式扣分） */
+  /** 家长审核：一次确认即兑换成功（正式扣分，无需二次兑现确认） */
   const approveRedemption = useCallback(async (redemptionId: string) => {
     if (!user) return false;
 
     let newState: AppState;
     setState(prev => {
       const newRedemptions = prev.redemptions.map(r =>
-        r.id === redemptionId ? { ...r, status: 'approved' as const } : r
+        r.id === redemptionId ? { ...r, status: 'fulfilled' as const } : r
       );
       newState = {
         ...prev,
@@ -938,7 +948,7 @@ export const useSyncedAppState = () => {
 
     (async () => {
       try {
-        const { count, error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'approved');
+        const { count, error: updateError } = await updateRedemptionStatus(user.id, redemptionId, 'fulfilled');
         if (updateError) {
           console.error('Failed to approve redemption:', updateError);
           return;
@@ -999,30 +1009,6 @@ export const useSyncedAppState = () => {
     return true;
   }, [user, createBackup, refreshData]);
 
-  /** 家长确认：奖品已兑现 */
-  const fulfillRedemption = useCallback(async (redemptionId: string) => {
-    if (!user) return false;
-
-    setState(prev => {
-      const newRedemptions = prev.redemptions.map(r =>
-        r.id === redemptionId ? { ...r, status: 'fulfilled' as const } : r
-      );
-      return { ...prev, redemptions: newRedemptions };
-    });
-
-    const { count, error } = await updateRedemptionStatus(user.id, redemptionId, 'fulfilled');
-    if (error) {
-      console.error('Failed to fulfill redemption:', error);
-      return false;
-    }
-    if (count === 0) {
-      console.error('fulfillRedemption: 云端未找到兑换记录，触发全量刷新');
-      refreshData();
-      return false;
-    }
-    return true;
-  }, [user, refreshData]);
-
   const deleteRedemption = useCallback(async (redemptionId: string) => {
     if (!user) return false;
 
@@ -1056,133 +1042,6 @@ export const useSyncedAppState = () => {
         }
 
         await createBackup(newState!, '删除兑换记录');
-      } catch (error) {
-        console.error('Error syncing to Supabase:', error);
-      }
-    })();
-
-    return true;
-  }, [user, createBackup]);
-
-  // ============================================
-  // 积分调整
-  // ============================================
-  const adjustPoints = useCallback(async (points: number, reason: string) => {
-    if (!user) return false;
-
-    const { data, error } = await insertPointAdjustment(user.id, points, reason);
-    if (error) {
-      console.error('Failed to insert point adjustment:', error);
-      return false;
-    }
-
-    const adjustment: PointAdjustment = {
-      id: data.id,
-      points,
-      reason,
-      adjustedAt: Date.now(),
-      createdAt: Date.now(),
-    };
-
-    setState(prev => {
-      let newState: AppState = {
-        ...prev,
-        pointAdjustments: [adjustment, ...prev.pointAdjustments],
-      };
-
-      newState.totalPoints = calculateTotalPoints(newState);
-
-      if (points > 0) {
-        playPointSound(newState.settings.soundEnabled);
-        newState = unlockBadges(newState);
-      }
-
-      updateProfileTotalPoints(user.id, newState.totalPoints).then(({ error }) => {
-        if (error) console.error('total points sync error:', error);
-      });
-
-      return newState;
-    });
-
-    return true;
-  }, [user]);
-
-  const editPointAdjustment = useCallback(async (id: string, points: number, reason: string) => {
-    if (!user) return false;
-
-    let newState: AppState;
-    setState(prev => {
-      const newPointAdjustments = prev.pointAdjustments.map(adj =>
-        adj.id === id ? { ...adj, points, reason } : adj
-      );
-
-      newState = {
-        ...prev,
-        pointAdjustments: newPointAdjustments,
-      };
-
-      newState.totalPoints = calculateTotalPoints(newState);
-
-      saveState(newState);
-
-      return newState;
-    });
-
-    (async () => {
-      try {
-        const { error: adjustError } = await updatePointAdjustment(id, user.id, points, reason);
-        if (adjustError) {
-          console.error('Failed to update point_adjustments:', adjustError);
-          return;
-        }
-
-        const { error: profileError } = await updateProfileTotalPoints(user.id, newState!.totalPoints);
-        if (profileError) {
-          console.error('Failed to update profiles total_points:', profileError);
-        }
-
-        await createBackup(newState!, '编辑积分调整记录');
-      } catch (error) {
-        console.error('Error syncing to Supabase:', error);
-      }
-    })();
-
-    return true;
-  }, [user, createBackup]);
-
-  const deletePointAdjustment = useCallback(async (id: string) => {
-    if (!user) return false;
-
-    let newState: AppState;
-    setState(prev => {
-      const newPointAdjustments = prev.pointAdjustments.filter(adj => adj.id !== id);
-
-      newState = {
-        ...prev,
-        pointAdjustments: newPointAdjustments,
-      };
-
-      newState.totalPoints = calculateTotalPoints(newState);
-
-      saveState(newState);
-
-      return newState;
-    });
-
-    (async () => {
-      try {
-        const { error: deleteError } = await deletePointAdjustmentApi(id, user.id);
-        if (deleteError) {
-          console.error('Failed to delete from point_adjustments:', deleteError);
-          return;
-        }
-
-        const { error: profileError } = await updateProfileTotalPoints(user.id, newState!.totalPoints);
-        if (profileError) {
-          console.error('Failed to update profiles total_points:', profileError);
-        }
-
-        await createBackup(newState!, '删除积分调整记录');
       } catch (error) {
         console.error('Error syncing to Supabase:', error);
       }
@@ -1407,7 +1266,6 @@ export const useSyncedAppState = () => {
     redeemReward,
     approveRedemption,
     rejectRedemption,
-    fulfillRedemption,
     deleteRedemption,
     toggleSound,
     updateReminder,
@@ -1419,9 +1277,6 @@ export const useSyncedAppState = () => {
     getTodayRecord,
     getStats,
     refreshData,
-    adjustPoints,
-    editPointAdjustment,
-    deletePointAdjustment,
     buyMakeupCard,
     useMakeupCard,
     addCustomBadge,

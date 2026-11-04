@@ -87,7 +87,7 @@ export interface Redemption {
   rewardName: string;
   points: number;
   redeemedAt: number;
-  /** 兑换状态：pending=待家长确认（积分冻结）｜approved=已确认（扣分）｜fulfilled=已兑现｜rejected=已驳回（退还） */
+  /** 兑换状态：pending=待家长确认（积分冻结）｜fulfilled=兑换成功（扣分，家长一次确认即达）｜rejected=已驳回（退还）；approved 仅历史数据兼容 */
   status?: 'pending' | 'approved' | 'fulfilled' | 'rejected';
 }
 

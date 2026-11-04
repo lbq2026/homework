@@ -44,7 +44,7 @@ export const RewardCard = ({
       }`}
     >
       {!canAfford && (
-        <div className="absolute inset-0 bg-neutral-100/50 rounded-card flex items-center justify-center z-10">
+        <div className="absolute inset-0 bg-neutral-100/50 rounded-card flex items-center justify-center z-10 pointer-events-none">
           <div className="bg-white/90 rounded-full p-2 sm:p-3 shadow-card">
             <Lock className="w-5 h-5 sm:w-6 sm:h-6 text-neutral-400" />
           </div>
