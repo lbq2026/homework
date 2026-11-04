@@ -66,13 +66,18 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 - 索引优化
 - 默认分类初始化
 
+> `full-schema.sql` 只是**基线**。全新数据库还需按 [sql/README.md](./sql/README.md) 的 ①–⑧ 顺序继续执行 `now / next / later`、`username-login`、`create-child-account`、`parent-controls`、`child-points-binding`，否则家长审核、孩子管理与家长调分等功能会因缺列/缺 RPC 失败。
+
 ### 方法二：分步执行（增量/修复场景）
 
-如果已有数据库但需要按阶段修复或补功能，按 [docs/项目总览.md](./docs/项目总览.md) 的「SQL 脚本执行矩阵」选取脚本：
+如果已有数据库但需要按阶段修复或补功能，按 [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) §8.3「SQL 脚本执行顺序与排障矩阵」选取脚本：
 
 - 基线表缺失/损坏：重跑 `sql/full-schema.sql`（幂等，不删数据）
 - 兑换报 `status` 列缺失：先 `sql/fix-redemption-status-only.sql` 急救，再补 `sql/now-phase-trust-fix.sql`
 - 其余功能增量（临时任务/重复规则/多孩子/自定义徽章/用户名登录/子账号 RPC）：对应执行 `now/next/later-phase-*.sql` 与 `username-login.sql`、`create-child-account.sql`
+- 家长读孩子数据 / 管理孩子 / 兑换审批：执行 `sql/parent-controls.sql`（含 10 张表家长读策略 + 7 个 RPC）
+- 家长手动加减分记到孩子账号：执行 `sql/child-points-binding.sql`（3 个 `SECURITY DEFINER` RPC，单事务同步孩子总分）
+- 一次性/运维脚本（存量兑换归一、只读子账号核查）见 [sql/README.md](./sql/README.md) §3，执行前先备份
 
 ## 5. 配置认证
 
@@ -130,7 +135,7 @@ pnpm dev
 | `tertiary_categories` | 三级分类表 | id, user_id, secondary_category_id, name, icon, default_points, repeat_rule |
 | `data_backups` | 云端备份快照 | id, user_id, backup_data, created_at |
 
-> ⚠️ 上表为**现行完整结构**（含各增量脚本补充的字段）；`sql/full-schema.sql` 为基线，不含标新字段，需按执行矩阵补齐。完整表结构明细见 [docs/项目总览.md](./docs/项目总览.md)。
+> ⚠️ 上表为**现行完整结构**（含各增量脚本补充的字段）；`sql/full-schema.sql` 为基线，不含标新字段，需按执行矩阵补齐。完整表结构明细见 [docs/CODE_WIKI.md](./docs/CODE_WIKI.md)。
 
 ### 视图
 
@@ -142,7 +147,8 @@ pnpm dev
 
 所有表都启用了 Row Level Security，确保用户只能访问自己的数据：
 - 用户只能查看/修改自己的记录
-- 家长角色可以查看关联孩子的数据
+- 家长角色可以查看关联孩子的数据（`parent-controls.sql` 为 10 张业务表追加家长 SELECT 策略）
+- 家长写孩子数据（管理孩子、兑换审批、手动调分/下发）只通过 `SECURITY DEFINER` RPC + `is_parent_of()` 校验，不直接在写策略上放宽（`parent-controls.sql` / `child-points-binding.sql`）
 - 三级分类表启用完整的 RLS 保护
 
 ### 触发器
@@ -248,7 +254,7 @@ pg_dump -h db.<project-ref>.supabase.co -p 5432 -U postgres -d postgres > backup
 - 旧数据未更新
 
 **解决方法**：
-- 按 [docs/项目总览.md](./docs/项目总览.md) 的脚本执行矩阵补跑对应增量脚本
+- 按 [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) 的脚本执行矩阵补跑对应增量脚本
 - 检查 point_adjustments 表数据
 - 验证触发器是否正常工作
 

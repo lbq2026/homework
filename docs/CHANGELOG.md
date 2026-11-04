@@ -1,20 +1,5 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [2.1.3] - 2026-09-04
-
-### Changed（兑换记录按时间倒序）
-- Rewards 兑换记录列表与 ParentDashboard 待审核列表均改为**最新在上**（`redeemedAt`/`created_at` 降序）
-- `supabaseApi.ts` 两处 redemptions 查询补 `.order('created_at', { ascending: false })`；渲染层兜底排序覆盖 localStorage 恢复等一切来源
-
-### Docs（项目文档梳理与收敛）
-- 新增 `docs/项目总览.md`：一页式总览（模块地图 / 数据库全景 / SQL 脚本执行矩阵 / 核心业务规则 / 文档导航），汇总 `docs/` 与 `sql/` 全部内容，取代此前多份散落的分析报告
-- 归档已完成使命的 6 份文档（项目分析报告、项目结构梳理与优化建议、PWA 评估与实施建议、手机号登录配置指南、产品优化建议书、上传 GitHub 指南）与 7 个 RLS 历史排障脚本（fix-infinite-recursion(-v2)/fix-rls-full/fix-rls-infinite-recursion/safe-fix-all/safe-rls-setup/fix-missing-functions）至 `.workbuddy/archive/2026-09-04-docs-sql-cleanup/`（git 亦有历史可恢复）
-- `docs/` 收敛为 4 份长期文档：设计规范 / 变更日志 / 项目历史 / 项目总览；`sql/` 收敛为 8 个现行脚本
+(some characters truncated)...
+规范 / 变更日志 / 项目历史 / 项目总览；`sql/` 收敛为 8 个现行脚本
 - README 同步修正：版本号 v2.1.0→v2.1.2、移除「手机号登录」特性行、初始化数据库补基线顺序与 status 急救指引、Schema 章节与文档索引指向项目总览、版本表补 v2.1.1/v2.1.2
 - SUPABASE_SETUP 同步修正：npm→pnpm、修复脚本引用改为项目总览执行矩阵、表清单补 custom_badges/data_backups/status 等现行结构
 
@@ -257,3 +242,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/username/repo/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/username/repo/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/username/repo/releases/tag/v1.0.0
+
+---
+
+## 附：开发批次详细记录（原 `docs/项目历史.md`，2026-10-30 合并）
+
+> 按开发批次记录背景、根因、验证与遗留风险，是上方版本条目的工程细节补充。新开发完成后在版本区追加条目即可。
+
+### 2026-11-04｜文档与 SQL 梳理（v2.2.0）
+
+- 新增 `sql/README.md`：12 个脚本按「全新建库 / 存量补跑 / 一次性运维」分类，明确 ①–⑧ 执行顺序、验证 SQL 与急救补丁的后续动作
+- 新增 `docs/README.md`：长期文档、superpowers 设计与实施记录、历史合并说明与维护约定
+- README / SUPABASE_SETUP / CODE_WIKI 同步至 v2.2.0，补齐家长管理、数据下发、积分绑定孩子的功能与 RPC 清单
+
+### 2026-11-03｜家长手动加减分绑定孩子（v2.2.0）
+
+- 根因：家长调分写入的是当前登录家长账号，孩子积分与流水不变；且 RLS 仅允许 `user_id = auth.uid()`，家长无法直写孩子
+- 方案：读走 RLS（已有 `is_parent_of` SELECT 策略），写走 3 个 `SECURITY DEFINER` RPC（单事务写 `point_adjustments` + 同步 `profiles.total_points`），不放松 RLS
+- 页面：孩子切换器（0/1/多孩子）、按所选孩子统计与流水、扣分截断、编辑/删除校验、错误态与重试
+- 验证：`tsc` 通过 / Vitest 54 用例通过 / `vite build` 通过；RPC 需在 SQL Editor 执行 `sql/child-points-binding.sql` 后联调
+
+### 2026-11-02｜孩子数据继承（下发复制，v2.2.0）
+
+- 家长可把作业（三级分类，自动补齐一二级分类）、奖品、自定义徽章下发复制给指定孩子，按名称幂等去重
+- 新增 `dispatch_to_child` / `delete_child_template` RPC；孩子端开放作业/奖品删除，徽章/分类仅家长可删
+- 前端新增 `components/parent/DispatchDialog.tsx`、`ManageChildDataDialog.tsx`，复用 `ChildSection`
+
+### 2026-10-30｜家长控制与孩子管理（v2.1.4）
+
+- 家长登录落地 `/parent`；10 张业务表新增家长读策略；家长管理孩子 5 个 RPC（编辑资料/重置密码/解绑/绑定已有孩子/兑换审批）
+- 兑换流程收敛为一次确认（`approve_redemption` 直接 `fulfilled` 并扣分），`approved` 保留历史兼容
+- 修复：`approve_redemption` 变量声明、`is_parent_of` 前置函数补建
+
+### 2026-09-04｜文档体系收敛（v2.1.3）
+
+- `docs/` 9 → 4 份、`sql/` 15 → 8 个，6 份分析/指南文档与 7 个 RLS 历史排障脚本归档至 `.workbuddy/archive/2026-09-04-docs-sql-cleanup/`（git 亦可恢复）
+- README/SUPABASE_SETUP 同步修正版本号、pnpm、脚本执行矩阵引用、表清单补齐
+
+### 2026-09-04｜登录页移除手机号验证码登录（v2.1.2）
+
+- 原因：Supabase Phone provider 需付费短信服务，与邮箱登录并存增加入口复杂度
+- 接口保留：`useAuth.tsx` 内 `sendPhoneOtp`/`verifyPhoneOtp` 方法未删，需恢复时补回 UI 即可
+- 验证：`tsc -b` ✅ / vitest 18/18 ✅
+
+### 2026-09-04｜兑换记录次日丢失 · ID 双轨错位根治（v2.1.1）
+
+- **死亡链**：reward 双轨 id → `redemptions.reward_id` 外键违规 → 兑换记录从未入库（console.error 静默）→ 次日 `buildStateFromDb` 用云端空表重建 → 记录消失、积分"复原"
+- 修复：6 个 insert 全部显式携带前端 UUID；`updateRedemptionStatus` 返回 affected rows，0 行自动 `refreshData()` 对齐；新增 redemptions Realtime 订阅；`insertRedemption` 遇 23503 自动降级 `reward_id=NULL` 重插；`redeemReward` 返回结构化失败原因并分原因 toast
+- 遗留风险：`database.ts` 中 `redemptions.reward_id` 类型仍为非空 string（DB 实际可空），降级分支用断言绕过
+
+### 2026-08-14｜阶段一：止血与清理（代码健康度）
+
+- 时区 Bug：新增 `utils/date.ts`（本地时区），替换全项目 17 处 UTC 日期切分（北京时间凌晨 0-8 点会记成前一天）；`calculateStreak` 修正 `86400000` 硬编码
+- 统一 ID：8 处 `Date.now().toString()` → `crypto.randomUUID()`；删除死代码 `useAppState.ts`（527 行）；清理 93 处 `console.log`；移除危险脚本 `temporary-disable-rls.sql`；npm → pnpm
+
+### 2026-08-14｜阶段二：架构重构
+
+- 新增 `services/supabaseApi.ts`（类型化数据访问层），`useSyncedAppState` 1,662 → 约 1,000 行；新增 `contexts/AppStateContext.tsx` 消除 prop drilling；`lib/supabase.ts` 接入 Database 泛型，`any` 28 → 0；新增 `supabase/migrations/` 两份标准迁移
+
+### 2026-08-14｜阶段三：工程化建设
+
+- 图标常量下沉 `constants/icons.ts`；Vitest 单测（16 用例）；CI 流水线（lint 宽松 + build/test 门禁）；React Router + 7 页懒加载（首屏 gzip -18%）；PWA 评估（后续已实施）
+
+### 历史版本
+
+- 1.1.0（2026-03-13）：积分管理页、数据备份/同步 Hook、分类系统、数据库递归修复
+- 1.0.0（2026-02-05）：初始版本（任务/积分/兑换/徽章/认证/云同步/导入导出）

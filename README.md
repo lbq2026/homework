@@ -2,7 +2,7 @@
 
 一个专为 **6~12 岁儿童**设计的作业任务管理应用，通过游戏化的积分、连击、徽章系统激励孩子主动完成作业。家长可配置作业库、审核兑换、查看孩子成长数据。
 
-> 当前版本：**v2.1.2**（详见 [docs/CHANGELOG.md](./docs/CHANGELOG.md)）
+> 当前版本：**v2.2.0**（详见 [docs/CHANGELOG.md](./docs/CHANGELOG.md)）
 
 ---
 
@@ -24,6 +24,7 @@
 - 完成任务获得积分，实时显示
 - 自动计算总积分（作业完成 + 手动调整 - 兑换消耗）
 - 积分流水记录（家长可手动加减分，需填写原因）
+- **家长调分绑定孩子**：积分管理页可切换所选孩子，记录与总分同步写入孩子账号（超额扣分自动截断）
 - 补签卡：用积分兑换，可补回一天连击
 
 ### 🎁 奖品兑换
@@ -44,6 +45,8 @@
 ### 👨👩👧 多孩子支持（P0-5）
 - 家长创建多个孩子档案，独立账号、独立数据
 - 家长控制台：孩子列表 + 数据面板 + 兑换审核 + 管理入口
+- 孩子管理：编辑资料 / 重置密码 / 解绑（保留数据）/ 绑定已有孩子
+- 数据下发：把作业（三级分类）、奖品、自定义徽章复制给指定孩子，可重复按需下发
 
 ### 📱 PWA + 本地提醒（P1-4）
 - 可安装到主屏幕、离线可用（Service Worker 缓存）
@@ -164,9 +167,11 @@ sql/next-phase-growth-retention.sql # P1：临时任务 / 重复规则 / 多孩�
 sql/later-phase-scale-compliance.sql # Later：custom_badges 表 + RLS
 sql/username-login.sql              # 用户名→邮箱映射函数
 sql/create-child-account.sql        # 家长代创建子账号 RPC（绕过 signUp 限流）
+sql/parent-controls.sql             # 家长读孩子数据策略 + 孩子管理 7 个 RPC
+sql/child-points-binding.sql        # 家长手动加减分写孩子账号 3 个 RPC
 ```
 
-> 存量库若报 `Could not find the 'status' column of 'redemptions'`：先执行 `sql/fix-redemption-status-only.sql` 急救补列，再补跑 `now-phase-trust-fix.sql` 获得家长审核完整 RLS。脚本与表结构全览见 [docs/项目总览.md](./docs/项目总览.md)。
+> 存量库若报 `Could not find the 'status' column of 'redemptions'`：先执行 `sql/fix-redemption-status-only.sql` 急救补列，再补跑 `now-phase-trust-fix.sql` 获得家长审核完整 RLS。脚本分类、执行顺序与排障矩阵见 [sql/README.md](./sql/README.md) 和 [docs/CODE_WIKI.md](./docs/CODE_WIKI.md)。
 
 ### 4. 启动开发服务器
 
@@ -252,6 +257,7 @@ pnpm preview
 src/
 ├── components/          # 组件目录
 │   ├── ui/             # UI 基础组件（shadcn/ui）
+│   ├── parent/         # 家长中心组件（ChildSection/下发/管理孩子数据）
 │   ├── BadgeDisplay.tsx
 │   ├── BadgeUnlockModal.tsx
 │   ├── IconPicker.tsx
@@ -279,6 +285,7 @@ src/
 │   └── index.ts        # 通用类型
 ├── utils/              # 工具函数
 │   ├── date.ts         # 日期工具（本地时区）
+│   ├── pointAdjustment.ts # 积分调整规则（扣分截断/编辑校验）
 │   ├── sound.ts        # 音效管理
 │   └── storage.ts      # 本地存储 + 连击/徽章计算
 ├── views/              # 页面视图
@@ -322,8 +329,12 @@ src/
 **RPC 函数**：
 - `get_email_by_username(text)` — 用户名反查邮箱（用户名登录）
 - `create_child_account(text, text, uuid)` — 家长代创建子账号（密码 bcrypt 哈希，绕过 signUp 邮件限流）
+- `update_child_profile` / `reset_child_password` / `unbind_child` / `bind_existing_child` — 家长管理孩子档案
+- `approve_redemption` — 家长兑换审批（确认即 `fulfilled` 并扣分）
+- `dispatch_to_child` / `delete_child_template` — 下发复制 / 删除孩子模板数据
+- `adjust_child_points` / `update_child_point_adjustment` / `delete_child_point_adjustment` — 家长手动调分写孩子账号（单事务同步总分）
 
-表结构明细、函数/RPC、触发器与脚本执行顺序见 **[docs/项目总览.md](./docs/项目总览.md)**（汇总自 `docs/` 与 `sql/`）。
+表结构明细、函数/RPC、触发器、脚本执行顺序与存量库排障矩阵见 **[docs/CODE_WIKI.md](./docs/CODE_WIKI.md)**。
 
 ---
 
@@ -373,7 +384,7 @@ pnpm exec tsc -b  # 仅 TypeScript 类型检查
    docs: 补充贡献指南章节
    refactor: 抽离 BadgeCard 公共组件
    ```
-4. **更新文档**：涉及新功能或行为变更时，请同步更新 `docs/CHANGELOG.md` 与 `docs/项目历史.md`
+4. **更新文档**：涉及新功能或行为变更时，请同步更新 `docs/CHANGELOG.md` 与 `docs/CODE_WIKI.md`
 5. **PR 描述**：说明改动动机、实现方案、自检结果；有 UI 改动请附截图
 
 ### 代码规范约定
@@ -396,11 +407,12 @@ PR 会自动触发 GitHub Actions 质量门禁（`.github/workflows/ci.yml`）�
 
 ## 📄 相关文档
 
-- [项目总览（模块地图 · 数据库 · 脚本顺序 · 业务规则）](./docs/项目总览.md)
+- [文档导航（docs/README.md）](./docs/README.md)
+- [Code Wiki（架构 · 模块 · 数据库 · 脚本排障矩阵）](./docs/CODE_WIKI.md)
+- [SQL 脚本索引（sql/README.md）](./sql/README.md)
 - [设计系统规范（v2.0 亮色乐园）](./docs/design-system.md)
 - [Supabase 设置指南](./SUPABASE_SETUP.md)
 - [更新日志 CHANGELOG](./docs/CHANGELOG.md)
-- [项目历史](./docs/项目历史.md)
 - [Supabase 官方文档](https://supabase.com/docs)
 - [React 文档](https://react.dev)
 - [Vite 文档](https://vite.dev)
@@ -413,6 +425,8 @@ PR 会自动触发 GitHub Actions 质量门禁（`.github/workflows/ci.yml`）�
 
 | 版本 | 内容 |
 |------|------|
+| v2.2.0 | 孩子数据继承（下发复制）、家长手动加减分绑定孩子、文档与 SQL 索引梳理 |
+| v2.1.4 | 家长控制台与孩子管理（编辑/重置/解绑/绑定、兑换一次确认） |
 | v2.1.2 | 登录页移除手机号验证码入口（可自 git 历史恢复） |
 | v2.1.1 | 修复兑换记录次日丢失：ID 双轨错位根治 + 审核同步 + Realtime 订阅 |
 | v2.1.0 | 亮色乐园设计系统全站落地（11 页面 + 2 组件） |

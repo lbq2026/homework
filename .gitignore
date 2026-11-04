@@ -46,3 +46,6 @@ _sqlite_test.db
 # 模板遗留临时脚本
 parser_fix.js
 univ_check.js
+
+# 头脑风暴视觉伴侣会话产物
+.superpowers/
