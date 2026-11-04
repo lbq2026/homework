@@ -5,14 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth } from '@/hooks/useAuth.tsx';
+import { useAuth, type UserRole } from '@/hooks/useAuth.tsx';
 
 interface AuthProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (role?: UserRole | null) => void;
 }
 
 export const Auth = ({ onLoginSuccess }: AuthProps) => {
-  const { signIn, signInWithUsername, signUp, resetPassword, isConfigured } = useAuth();
+  const { signIn, signInWithUsername, signUp, resetPassword, isConfigured, fetchUserRole } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +68,8 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
     if (error) {
       setError(error.message);
     } else {
-      onLoginSuccess();
+      const role = await fetchUserRole();
+      onLoginSuccess(role);
     }
     setIsLoading(false);
   };
@@ -126,7 +127,7 @@ export const Auth = ({ onLoginSuccess }: AuthProps) => {
             </code>
           </div>
           <Button 
-            onClick={onLoginSuccess}
+            onClick={() => onLoginSuccess(null)}
             className="mt-6 w-full bg-neutral-600 hover:bg-neutral-800 rounded-button"
           >
             先使用本地模式

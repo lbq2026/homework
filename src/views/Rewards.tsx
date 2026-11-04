@@ -1,123 +1,5 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Gift, Edit2, Trash2, Check, CheckCircle2, XCircle, PackageCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RewardCard } from '@/components/RewardCard';
-import { PointsDisplay } from '@/components/PointsDisplay';
-import type { Reward, Redemption } from '@/types';
-import { REWARD_ICONS } from '@/constants/icons';
-import { useAppState } from '@/contexts/AppStateContext';
-import { useAuth } from '@/hooks/useAuth.tsx';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
-
-/** 兑换状态徽标配置 */
-const STATUS_META: Record<NonNullable<Redemption['status']>, { label: string; cls: string }> = {
-  pending: { label: '待家长确认', cls: 'bg-amber-100 text-amber-700' },
-  approved: { label: '已确认', cls: 'bg-blue-100 text-blue-700' },
-  fulfilled: { label: '已兑现', cls: 'bg-green-100 text-green-700' },
-  rejected: { label: '已驳回', cls: 'bg-red-100 text-red-600' },
-};
-
-export const Rewards = () => {
-  const navigate = useNavigate();
-  const { isParent } = useAuth();
-  const { state, availablePoints, addReward, editReward, deleteReward, redeemReward, approveRedemption, rejectRedemption, fulfillRedemption, deleteRedemption } = useAppState();
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editingReward, setEditingReward] = useState<Reward | null>(null);
-  const [showRedeemConfirm, setShowRedeemConfirm] = useState<Reward | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<Reward | null>(null);
-  const [showDeleteRedemptionConfirm, setShowDeleteRedemptionConfirm] = useState<Redemption | null>(null);
-
-  // 表单状态
-  const [formData, setFormData] = useState({
-    name: '',
-    points: 10,
-    icon: '🎁',
-    description: '',
-    category: 'entertainment' as Reward['category'],
-  });
-
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      points: 10,
-      icon: '🎁',
-      description: '',
-      category: 'entertainment',
-    });
-  };
-
-  const handleSubmit = () => {
-    if (!formData.name.trim()) return;
-    
-    if (editingReward) {
-      editReward(editingReward.id, formData);
-      setEditingReward(null);
-    } else {
-      addReward(formData);
-    }
-    setShowAddDialog(false);
-    resetForm();
-  };
-
-  const handleEdit = (reward: Reward) => {
-    setEditingReward(reward);
-    setFormData({
-      name: reward.name,
-      points: reward.points,
-      icon: reward.icon,
-      description: reward.description,
-      category: reward.category,
-    });
-    setShowAddDialog(true);
-  };
-
-  const handleDeleteClick = (reward: Reward) => {
-    setShowDeleteConfirm(reward);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (showDeleteConfirm) {
-      deleteReward(showDeleteConfirm.id);
-      setShowDeleteConfirm(null);
-    }
-  };
-
-  const handleDeleteRedemptionClick = (redemption: Redemption) => {
-    setShowDeleteRedemptionConfirm(redemption);
-  };
-
-  const handleDeleteRedemptionConfirm = async () => {
-    if (showDeleteRedemptionConfirm) {
-      const success = await deleteRedemption(showDeleteRedemptionConfirm.id);
-      if (success) {
-        toast.success(`已撤销兑换`, {
-          description: '积分已归还',
-          icon: '✅',
-        });
-      }
-      setShowDeleteRedemptionConfirm(null);
-    }
-  };
-
-  const handleRedeem = async () => {
-    if (showRedeemConfirm) {
-      const result = await redeemReward(showRedeemConfirm);
-      if (result.ok) {
-        toast.success(`兑换申请已提交: ${showRedeemConfirm.name}`, {
-          description: `待家长确认后扣减 ${showRedeemConfirm.points} 积分`,
-          icon: '🎉',
-        });
-        setShowRedeemConfirm(null);
-      } else if (result.reason === 'insufficient') {
-        toast.error('积分不足，无法兑换这个奖品', { icon: '😢' });
+(some characters truncated)...
+兑换这个奖品', { icon: '😢' });
       } else if (result.reason === 'no-user') {
         toast.error('请先登录后再兑换', { icon: '🔒' });
       } else {
@@ -216,9 +98,9 @@ export const Rewards = () => {
                         onRedeem={() => setShowRedeemConfirm(reward)}
                         redeemedCount={getRedeemedCount(reward.id)}
                       />
-                      {/* 编辑/删除按钮 - 仅家长可见 */}
-                      {isParent && (
-                      <div className="absolute top-1 right-1 flex gap-1">
+                      {/* 编辑仅家长；删除孩子也可用（删自己的奖品，走既有确认弹窗） */}
+                      <div className="absolute top-1 right-1 flex gap-1 z-20">
+                        {isParent && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -227,6 +109,7 @@ export const Rewards = () => {
                         >
                           <Edit2 className="w-4 h-4 text-accent-yellow-600" />
                         </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -236,7 +119,6 @@ export const Rewards = () => {
                           <Trash2 className="w-4 h-4 text-semantic-danger" />
                         </Button>
                       </div>
-                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -293,10 +175,10 @@ export const Rewards = () => {
                                 variant="ghost"
                                 size="icon"
                                 className="w-7 h-7 hover:bg-green-50"
-                                title="通过兑换"
+                                title="确认兑换"
                                 onClick={async () => {
                                   const ok = await approveRedemption(redemption.id);
-                                  if (ok) toast.success('已通过兑换', { description: `扣减 ${redemption.points} 积分`, icon: '✅' });
+                                  if (ok) toast.success('兑换成功', { description: `扣减 ${redemption.points} 积分`, icon: '✅' });
                                 }}
                               >
                                 <CheckCircle2 className="w-4 h-4 text-green-600" />
@@ -314,20 +196,6 @@ export const Rewards = () => {
                                 <XCircle className="w-4 h-4 text-red-500" />
                               </Button>
                             </>
-                          )}
-                          {status === 'approved' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="w-7 h-7 hover:bg-brand-50"
-                              title="标记已兑现"
-                              onClick={async () => {
-                                const ok = await fulfillRedemption(redemption.id);
-                                if (ok) toast.success('已标记兑现', { icon: '🎁' });
-                              }}
-                            >
-                              <PackageCheck className="w-4 h-4 text-brand-500" />
-                            </Button>
                           )}
                           <Button
                             variant="ghost"

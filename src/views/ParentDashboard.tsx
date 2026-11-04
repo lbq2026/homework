@@ -1,38 +1,82 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ClipboardList, Gift, Coins, Users, Medal, ShieldCheck, CheckCircle2, XCircle, LayoutDashboard, BellRing } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Gift, Coins, Users, Medal, ShieldCheck, CheckCircle2, XCircle, LayoutDashboard, BellRing, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAppState } from '@/contexts/AppStateContext';
 import { useAuth } from '@/hooks/useAuth.tsx';
-import { fetchChildren } from '@/services/supabaseApi';
+import {
+  fetchChildren,
+  fetchChildData,
+  fetchPendingRedemptions,
+  approveRedemptionRpc,
+  type ProfileRow,
+} from '@/services/supabaseApi';
+import {
+  aggregateChildOverview,
+  toPendingRedemptionItems,
+  type PendingRedemptionItem,
+} from '@/utils/childOverview';
 import { getTodayStr } from '@/utils/date';
-import { getWeeklyReport } from '@/utils/storage';
+import { ChildSection } from '@/components/parent/ChildSection';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 /**
- * 家长控制台（Later 阶段）：数据总览 + 兑换审核 + 管理快捷入口
+ * 家长控制台：孩子数据聚合总览 + 兑换审批（RPC）+ 孩子区 + 管理快捷入口
  */
 export const ParentDashboard = () => {
   const navigate = useNavigate();
   const { isParent, user } = useAuth();
-  const { state, approveRedemption, rejectRedemption } = useAppState();
-  const [childCount, setChildCount] = useState(0);
+  const [childList, setChildList] = useState<ProfileRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState({ todayDone: 0, todayTotal: 0, weekPoints: 0, pendingCount: 0 });
+  const [pendingItems, setPendingItems] = useState<PendingRedemptionItem[]>([]);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
-  const today = getTodayStr();
-  const todayRecord = state.dailyRecords.find(r => r.date === today);
-  const todayDone = todayRecord?.tasks.filter(t => t.completed).length || 0;
-  const todayTotal = todayRecord?.tasks.length || 0;
-  const weekly = getWeeklyReport(state);
-  const pendingRedemptions = state.redemptions
-    .filter(r => r.status === 'pending')
-    .sort((a, b) => b.redeemedAt - a.redeemedAt);
+  // 加载孩子列表 → 并行拉取每个孩子完整数据（读走 RLS）+ 跨孩子待审核兑换
+  const loadAll = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const list = await fetchChildren(user.id);
+    setChildList(list);
+    if (list.length === 0) {
+      setOverview({ todayDone: 0, todayTotal: 0, weekPoints: 0, pendingCount: 0 });
+      setPendingItems([]);
+      setLoading(false);
+      return;
+    }
+    const [dataResults, pendingRows] = await Promise.all([
+      Promise.all(list.map(c => fetchChildData(c.id))),
+      fetchPendingRedemptions(list.map(c => c.id)),
+    ]);
+    const fragments = dataResults
+      .map(data => data ? { dailyRecords: data.dailyRecords, redemptions: data.redemptions } : null)
+      .filter((f): f is NonNullable<typeof f> => f !== null);
+    setOverview(aggregateChildOverview(fragments, getTodayStr()));
+    setPendingItems(toPendingRedemptionItems(
+      pendingRows,
+      list.map(c => ({ id: c.id, username: c.username })),
+    ));
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
-    if (user) {
-      fetchChildren(user.id).then(list => setChildCount(list.length));
+    loadAll();
+  }, [loadAll]);
+
+  // 审批走 RPC（fulfilled 扣积分 / rejected 冻结退回），成功后重拉总览
+  const handleApprove = async (item: PendingRedemptionItem, approve: boolean) => {
+    setApprovingId(item.id);
+    const { error } = await approveRedemptionRpc(item.id, approve);
+    setApprovingId(null);
+    if (error) {
+      toast.error(approve ? '审批失败' : '驳回失败', { description: error.message });
+      // 竞态兜底：兑换可能已被处理或已删除，刷新待审核列表与总览
+      await loadAll();
+      return;
     }
-  }, [user]);
+    toast.success(approve ? '兑换已通过' : '已驳回兑换', { icon: approve ? '✅' : '↩️' });
+    await loadAll();
+  };
 
   const quickLinks = [
     { label: '作业管理', desc: '配置分类与任务', icon: <ClipboardList className="w-6 h-6" />, to: '/tasks', cls: 'from-brand-400 to-brand-500' },
@@ -63,78 +107,80 @@ export const ParentDashboard = () => {
             <h3 className="font-medium text-neutral-600 mb-2">仅家长可用</h3>
             <p className="text-caption text-neutral-400">请使用家长账号登录后访问控制台</p>
           </div>
+        ) : loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="w-8 h-8 text-brand-500 animate-spin mx-auto mb-3" />
+          </div>
         ) : (
           <>
-            {/* 数据总览 */}
+            {/* 数据总览（聚合所有孩子） */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-card p-4 shadow-card border border-neutral-100">
                 <div className="text-caption text-neutral-400 mb-1 flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" /> 孩子档案
                 </div>
-                <div className="text-title font-bold text-brand-500">{childCount}</div>
+                <div className="text-title font-bold text-brand-500">{childList.length}</div>
               </div>
               <div className="bg-white rounded-card p-4 shadow-card border border-neutral-100">
                 <div className="text-caption text-neutral-400 mb-1 flex items-center gap-1">
                   <ClipboardList className="w-3.5 h-3.5" /> 今日进度
                 </div>
                 <div className="text-title font-bold text-accent-green-600">
-                  {todayDone}<span className="text-body text-neutral-400">/{todayTotal}</span>
+                  {overview.todayDone}<span className="text-body text-neutral-400">/{overview.todayTotal}</span>
                 </div>
               </div>
               <div className="bg-white rounded-card p-4 shadow-card border border-neutral-100">
                 <div className="text-caption text-neutral-400 mb-1 flex items-center gap-1">
                   <Gift className="w-3.5 h-3.5" /> 本周积分
                 </div>
-                <div className="text-title font-bold text-accent-yellow-600">{weekly.thisWeek.points}</div>
+                <div className="text-title font-bold text-accent-yellow-600">{overview.weekPoints}</div>
               </div>
               <div className="bg-white rounded-card p-4 shadow-card border border-neutral-100">
                 <div className="text-caption text-neutral-400 mb-1 flex items-center gap-1">
                   <BellRing className="w-3.5 h-3.5" /> 待审核兑换
                 </div>
-                <div className={`text-title font-bold ${pendingRedemptions.length > 0 ? 'text-accent-orange-600' : 'text-neutral-400'}`}>
-                  {pendingRedemptions.length}
+                <div className={`text-title font-bold ${pendingItems.length > 0 ? 'text-accent-orange-600' : 'text-neutral-400'}`}>
+                  {pendingItems.length}
                 </div>
               </div>
             </div>
 
-            {/* 待审核兑换 */}
-            {pendingRedemptions.length > 0 && (
+            {/* 待审核兑换（含孩子名，审批走 RPC） */}
+            {pendingItems.length > 0 && (
               <section className="bg-white rounded-card p-4 shadow-card border border-neutral-100">
                 <h3 className="font-bold text-neutral-800 mb-3 flex items-center gap-2">
                   <BellRing className="w-5 h-5 text-accent-orange-600" />
-                  待审核兑换（{pendingRedemptions.length}）
+                  待审核兑换（{pendingItems.length}）
                 </h3>
                 <div className="space-y-2">
-                  {pendingRedemptions.map(r => (
-                    <div key={r.id} className="flex items-center gap-3 p-3 bg-accent-yellow-300/20 rounded-card">
-                      <div className="text-2xl">
-                        {state.rewards.find(x => x.id === r.rewardId)?.icon || '🎁'}
-                      </div>
+                  {pendingItems.map(item => (
+                    <div key={item.id} className="flex items-center gap-3 p-3 bg-accent-yellow-300/20 rounded-card">
+                      <div className="text-2xl">🎁</div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-neutral-800 text-body truncate">{r.rewardName}</div>
-                        <div className="text-caption text-accent-yellow-600 font-bold">{r.points} ⭐</div>
+                        <div className="font-medium text-neutral-800 text-body truncate">{item.rewardName}</div>
+                        <div className="text-caption text-accent-yellow-600 font-bold">
+                          {item.points} ⭐ · {item.childName}
+                        </div>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="w-8 h-8 hover:bg-accent-green-300/30"
                         title="通过"
-                        onClick={async () => {
-                          await approveRedemption(r.id);
-                          toast.success('已通过兑换', { icon: '✅' });
-                        }}
+                        disabled={approvingId === item.id}
+                        onClick={() => handleApprove(item, true)}
                       >
-                        <CheckCircle2 className="w-5 h-5 text-accent-green-600" />
+                        {approvingId === item.id
+                          ? <Loader2 className="w-5 h-5 animate-spin" />
+                          : <CheckCircle2 className="w-5 h-5 text-accent-green-600" />}
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="w-8 h-8 hover:bg-semantic-danger-soft"
                         title="驳回"
-                        onClick={async () => {
-                          await rejectRedemption(r.id);
-                          toast.success('已驳回兑换', { icon: '↩️' });
-                        }}
+                        disabled={approvingId === item.id}
+                        onClick={() => handleApprove(item, false)}
                       >
                         <XCircle className="w-5 h-5 text-semantic-danger" />
                       </Button>
@@ -144,7 +190,10 @@ export const ParentDashboard = () => {
               </section>
             )}
 
-            {/* 管理快捷入口 */}
+            {/* 孩子区（卡片 + ⋯管理菜单 + 数据面板 + 绑定入口） */}
+            <ChildSection childList={childList} loading={false} onChanged={loadAll} showCreateAccount={false} />
+
+            {/* 管理快捷入口（保留原 6 项） */}
             <section>
               <h3 className="font-bold text-neutral-800 mb-3 flex items-center gap-2">
                 <LayoutDashboard className="w-5 h-5 text-brand-500" />

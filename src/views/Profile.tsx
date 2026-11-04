@@ -10,28 +10,7 @@ import { useAppState } from '@/contexts/AppStateContext';
 import { calculateStreak } from '@/utils/storage';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-
-const AVATAR_OPTIONS = [
-  { emoji: '😊', label: '微笑' },
-  { emoji: '😎', label: '酷' },
-  { emoji: '🤩', label: '兴奋' },
-  { emoji: '🌟', label: '星星' },
-  { emoji: '🚀', label: '火箭' },
-  { emoji: '👑', label: '皇冠' },
-  { emoji: '💎', label: '钻石' },
-  { emoji: '✨', label: '闪光' },
-  { emoji: '🎨', label: '艺术' },
-  { emoji: '🎵', label: '音乐' },
-  { emoji: '🎮', label: '游戏' },
-  { emoji: '📚', label: '阅读' },
-  { emoji: '🏆', label: '奖杯' },
-  { emoji: '🥇', label: '金牌' },
-  { emoji: '🦄', label: '独角兽' },
-  { emoji: '🐱', label: '猫咪' },
-  { emoji: '🐶', label: '狗狗' },
-  { emoji: '🦋', label: '蝴蝶' },
-  { emoji: '🌈', label: '彩虹' },
-];
+import { AVATAR_OPTIONS } from '@/constants/avatars';
 
 export const Profile = () => {
   const navigate = useNavigate();
