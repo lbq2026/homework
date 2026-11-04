@@ -1,5 +1,58 @@
-(some characters truncated)...
-规范 / 变更日志 / 项目历史 / 项目总览；`sql/` 收敛为 8 个现行脚本
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.2.0] - 2026-11-04
+
+### Added（孩子数据继承 · 下发复制）
+- 家长中心新增「下发」与「管理孩子数据」：作业（三级分类，自动补齐一二级分类）、奖品、自定义徽章复制到指定孩子；按名称幂等去重，重复下发返回新增 0
+- 孩子端开放作业/奖品删除入口；徽章/分类保持仅家长可删（避免误删被任务引用的分类）
+- 新增 RPC `dispatch_to_child`、`delete_child_template`（白名单表名 + 行属主校验）
+
+### Added（家长手动加减分绑定孩子）
+- 积分管理页新增孩子切换器：0 孩子空态引导绑定、1 孩子自动选中、多孩子 chip 切换
+- 统计卡、积分流水、加减分/编辑/删除全部按所选孩子读写；扣分按孩子当前积分截断，编辑校验「孩子当前积分 − 原值 + 新值 ≥ 0」
+- 新增 RPC `adjust_child_points` / `update_child_point_adjustment` / `delete_child_point_adjustment`：`SECURITY DEFINER` + `is_parent_of` 校验，单事务写记录并同步 `profiles.total_points`
+- 孩子端 `/profile/points` 只读自己的数据
+
+### Changed
+- `PointManagement` 家长端数据源改为 `fetchChildrenResult` / `fetchChildData`（`fetchChildrenResult` 暴露加载错误，区分空态与失败）
+- 移除 `useSyncedAppState` 中写家长自己账号的 `adjustPoints` / `editPointAdjustment` / `deletePointAdjustment`
+- 新增纯函数 `src/utils/pointAdjustment.ts`（扣分截断 / 编辑校验 / 默认孩子选择）+ Vitest 用例
+
+### Docs & SQL
+- 新增 `sql/README.md`（12 个脚本分类、执行顺序与存量库排障）与 `docs/README.md`（文档导航与维护约定）
+- 新增 `sql/child-points-binding.sql`；`sql/parent-controls.sql` 补齐下发/删除模板 RPC（2026-11-02）
+- 同步 README、SUPABASE_SETUP、CODE_WIKI 的版本号、功能说明、RPC 清单与脚本执行矩阵
+
+## [2.1.4] - 2026-10-30
+
+### Added（家长控制与孩子管理）
+- 家长登录后直达 `/parent` 家长中心：4 项数据总览、待审核兑换就地审核、管理入口网格
+- 孩子卡片「⋯」菜单：编辑资料（昵称/头像 emoji）、重置密码（旧登录立即失效）、解绑（保留账号与数据）
+- 「绑定已有孩子」：按孩子登录邮箱校验存在且未绑定
+- 新增 `sql/parent-controls.sql`：10 张业务表家长读策略 + `update_child_profile` / `reset_child_password` / `unbind_child` / `bind_existing_child` / `approve_redemption` 5 个 RPC
+
+### Changed（兑换一次确认）
+- 家长确认兑换即 `fulfilled` 并扣分，无需再点「标记已兑现」；`approved` 仅保留历史数据兼容
+- 存量记录可用 `sql/migrate-redemption-all-fulfilled.sql` 归一
+
+### Fixed
+- `approve_redemption` 补声明 `v_parent_id` 变量；迁移脚本补建 `is_parent_of` 前置函数
+
+## [2.1.3] - 2026-09-04
+
+### Changed（兑换记录按时间倒序）
+- Rewards 兑换记录列表与 ParentDashboard 待审核列表均改为**最新在上**（`redeemedAt`/`created_at` 降序）
+- `supabaseApi.ts` 两处 redemptions 查询补 `.order('created_at', { ascending: false })`；渲染层兜底排序覆盖 localStorage 恢复等一切来源
+
+### Docs（项目文档梳理与收敛）
+- 新增 `docs/项目总览.md`：一页式总览（模块地图 / 数据库全景 / SQL 脚本执行矩阵 / 核心业务规则 / 文档导航），汇总 `docs/` 与 `sql/` 全部内容，取代此前多份散落的分析报告
+- 归档已完成使命的 6 份文档（项目分析报告、项目结构梳理与优化建议、PWA 评估与实施建议、手机号登录配置指南、产品优化建议书、上传 GitHub 指南）与 7 个 RLS 历史排障脚本（fix-infinite-recursion(-v2)/fix-rls-full/fix-rls-infinite-recursion/safe-fix-all/safe-rls-setup/fix-missing-functions）至 `.workbuddy/archive/2026-09-04-docs-sql-cleanup/`（git 亦有历史可恢复）
+- `docs/` 收敛为 4 份长期文档：设计规范 / 变更日志 / 项目历史 / 项目总览；`sql/` 收敛为 8 个现行脚本
 - README 同步修正：版本号 v2.1.0→v2.1.2、移除「手机号登录」特性行、初始化数据库补基线顺序与 status 急救指引、Schema 章节与文档索引指向项目总览、版本表补 v2.1.1/v2.1.2
 - SUPABASE_SETUP 同步修正：npm→pnpm、修复脚本引用改为项目总览执行矩阵、表清单补 custom_badges/data_backups/status 等现行结构
 
