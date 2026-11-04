@@ -410,6 +410,51 @@ export type Database = {
         Args: { p_username: string; p_password: string; p_parent_id: string };
         Returns: { user_id: string; email: string; username: string } | null;
       };
+      update_child_profile: {
+        Args: { p_child_id: string; p_username: string; p_avatar: string | null };
+        Returns: Record<string, unknown>;
+      };
+      reset_child_password: {
+        Args: { p_child_id: string; p_new_password: string };
+        Returns: Record<string, unknown>;
+      };
+      unbind_child: {
+        Args: { p_child_id: string };
+        Returns: Record<string, unknown>;
+      };
+      bind_existing_child: {
+        Args: { p_child_email: string };
+        Returns: Record<string, unknown>;
+      };
+      approve_redemption: {
+        Args: { p_redemption_id: string; p_approve: boolean };
+        Returns: Record<string, unknown>;
+      };
+      dispatch_to_child: {
+        Args: {
+          p_child_id: string;
+          p_task_ids: string[] | null;
+          p_reward_ids: string[] | null;
+          p_badge_ids: string[] | null;
+        };
+        Returns: Record<string, unknown>;
+      };
+      delete_child_template: {
+        Args: { p_child_id: string; p_table: string; p_item_id: string };
+        Returns: Record<string, unknown>;
+      };
+      adjust_child_points: {
+        Args: { p_child_id: string; p_points: number; p_reason: string };
+        Returns: { success: boolean; adjustment_id: string; total_points: number };
+      };
+      update_child_point_adjustment: {
+        Args: { p_adjustment_id: string; p_points: number; p_reason: string };
+        Returns: { success: boolean; adjustment_id: string; total_points: number };
+      };
+      delete_child_point_adjustment: {
+        Args: { p_adjustment_id: string };
+        Returns: { success: boolean; adjustment_id: string; total_points: number };
+      };
     };
   };
 };
