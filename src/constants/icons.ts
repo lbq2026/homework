@@ -15,11 +15,48 @@ export const TASK_ICONS = {
   science: '🔬',
   history: '📜',
   geography: '🌍',
+  // —— 学科学习（小学常见作业类型）——
+  chinese: '📕', // 语文
+  math_book: '📘', // 数学
+  english_book: '📗', // 英语
+  pinyin: '🔤', // 拼音/字母
+  dictation: '👂', // 听写
+  recite: '🗣️', // 背诵/口语
+  handwriting: '🖋️', // 练字
+  calligraphy: '🖌️', // 书法/毛笔字
+  diary: '🗒️', // 日记
+  homework: '📝', // 写作业
+  // —— 数学专项 ——
+  abacus: '🧮', // 口算/算术
+  plus: '➕', // 加法
+  minus: '➖', // 减法
+  multiply: '✖️', // 乘法
+  divide: '➗', // 除法
+  geometry: '📐', // 几何
+  ruler: '📏', // 测量
+  // —— 科学探究 ——
+  experiment: '🧪', // 科学实验
+  telescope: '🔭', // 观察日记
+  seedling: '🌱', // 种植观察
+  map: '🗺️', // 地理地图
   art: '🎨',
   music: '🎵',
   piano: '🎹',
   guitar: '🎸',
   dance: '💃',
+  // —— 艺术与兴趣素养 ——
+  crayons: '🖍️', // 蜡笔画
+  sing: '🎤', // 唱歌
+  violin: '🎻', // 小提琴
+  drum: '🥁', // 架子鼓
+  music_notes: '🎶', // 音乐
+  score: '🎼', // 乐谱
+  handcraft: '✂️', // 手工剪纸
+  chess: '♟️', // 棋类
+  puzzle: '🧩', // 拼图
+  lego: '🧱', // 积木
+  programming: '💻', // 编程
+  martial_arts: '🥋', // 武术/跆拳道
   sport: '⚽',
   run: '🏃',
   jump: '⛹️',
@@ -31,6 +68,21 @@ export const TASK_ICONS = {
   bike: '🚴',
   yoga: '🧘',
   workout: '🏋️',
+  // —— 体育专项 ——
+  table_tennis: '🏓', // 乒乓球
+  jump_rope: '🪢', // 跳绳
+  gymnastics: '🤸', // 体操
+  volleyball: '🏐', // 排球
+  roller_skating: '🛴', // 轮滑（🛼 旧系统缺字，改用滑板车）
+  ice_skating: '⛸️', // 滑冰
+  skateboard: '🛹', // 滑板
+  // —— 生活自理与习惯 ——
+  schoolbag: '🎒', // 整理书包
+  tidy_bed: '🛏️', // 整理床铺
+  broom: '🧹', // 扫地/家务
+  dishes: '🍽️', // 洗碗
+  alarm: '⏰', // 早睡早起
+  bath: '🛁', // 洗澡
   star: '⭐',
   trophy: '🏆',
   medal: '🥇',
