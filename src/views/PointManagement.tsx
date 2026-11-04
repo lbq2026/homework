@@ -1,5 +1,287 @@
-(some characters truncated)...
-500 mb-2">尚未绑定孩子，请先到孩子管理中绑定</p>
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  ArrowLeft, Plus, Minus, Coins, History, TrendingUp, TrendingDown,
+  Calendar, Award, Pencil, Trash2, AlertTriangle, Loader2, Users,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { PointAdjustment } from '@/types';
+import { useAppState } from '@/contexts/AppStateContext';
+import { useAuth } from '@/hooks/useAuth.tsx';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import {
+  fetchChildrenResult,
+  fetchChildData,
+  buildStateFromDb,
+  toPointAdjustment,
+  adjustChildPointsRpc,
+  updateChildPointAdjustmentRpc,
+  deleteChildPointAdjustmentRpc,
+  type ProfileRow,
+  type UserDataResult,
+} from '@/services/supabaseApi';
+import { calculateTotalPoints } from '@/utils/storage';
+import {
+  clampDeduction,
+  canApplyEdit,
+  getMaxEditableDeduction,
+  pickInitialChildId,
+} from '@/utils/pointAdjustment';
+
+export const PointManagement = () => {
+  const navigate = useNavigate();
+  const { isParent, user } = useAuth();
+  const { state } = useAppState();
+
+  // 家长端：孩子列表 / 当前选中孩子 / 该孩子数据
+  const [childList, setChildList] = useState<ProfileRow[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [childData, setChildData] = useState<UserDataResult | null>(null);
+  const [isChildListLoading, setIsChildListLoading] = useState(false);
+  const [isChildDataLoading, setIsChildDataLoading] = useState(false);
+  const [childListError, setChildListError] = useState<string | null>(null);
+  const [childDataError, setChildDataError] = useState<string | null>(null);
+  const selectedChildRef = useRef<string | null>(null);
+
+  // 对话框状态
+  const [showAdjustDialog, setShowAdjustDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
+  const [adjustPoints, setAdjustPoints] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [editingAdjustment, setEditingAdjustment] = useState<PointAdjustment | null>(null);
+  const [deletingAdjustment, setDeletingAdjustment] = useState<PointAdjustment | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadChildren = useCallback(async () => {
+    if (!isParent || !user) return;
+    setIsChildListLoading(true);
+    setChildListError(null);
+    const { data, error } = await fetchChildrenResult(user.id);
+    setIsChildListLoading(false);
+    if (error) {
+      setChildListError(error.message);
+      return;
+    }
+    setChildList(data);
+    setSelectedChildId(prev =>
+      prev && data.some(c => c.id === prev) ? prev : pickInitialChildId(data),
+    );
+  }, [isParent, user]);
+
+  const loadChildData = useCallback(async (childId: string) => {
+    setIsChildDataLoading(true);
+    setChildDataError(null);
+    const data = await fetchChildData(childId);
+    // 竞态兜底：切换孩子后丢弃过期响应
+    if (selectedChildRef.current !== childId) return;
+    setIsChildDataLoading(false);
+    if (!data || !data.profile) {
+      setChildData(null);
+      setChildDataError('孩子数据加载失败，请检查网络后重试');
+      return;
+    }
+    setChildData(data);
+  }, []);
+
+  useEffect(() => {
+    selectedChildRef.current = selectedChildId;
+  }, [selectedChildId]);
+
+  useEffect(() => {
+    loadChildren();
+  }, [loadChildren]);
+
+  useEffect(() => {
+    if (!selectedChildId) {
+      setChildData(null);
+      setIsChildDataLoading(false);
+      return;
+    }
+    loadChildData(selectedChildId);
+  }, [selectedChildId, loadChildData]);
+
+  const selectedChild = childList.find(c => c.id === selectedChildId) || null;
+  const childAdjustments: PointAdjustment[] = childData
+    ? childData.pointAdjustments.map(toPointAdjustment)
+    : [];
+  const childTotal = childData ? calculateTotalPoints(buildStateFromDb(childData)) : 0;
+
+  // 家长端看所选孩子；孩子端看自己的全局状态
+  const displayAdjustments: PointAdjustment[] = isParent ? childAdjustments : state.pointAdjustments;
+  const displayTotal = isParent ? childTotal : state.totalPoints;
+
+  const totalAdded = displayAdjustments
+    .filter(a => a.points > 0)
+    .reduce((sum, a) => sum + a.points, 0);
+  const totalDeducted = displayAdjustments
+    .filter(a => a.points < 0)
+    .reduce((sum, a) => sum + Math.abs(a.points), 0);
+
+  const handleSubmit = async () => {
+    const points = parseInt(adjustPoints);
+    if (isNaN(points) || points <= 0) return;
+    if (!adjustReason.trim()) return;
+    if (!selectedChildId || !childData) {
+      toast.error('请先选择要调整积分的孩子');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const actualPoints = adjustType === 'add' ? points : clampDeduction(points, childTotal);
+    if (actualPoints === 0) {
+      setIsSubmitting(false);
+      toast.error('孩子当前积分为 0，无法扣分');
+      return;
+    }
+
+    const { error } = await adjustChildPointsRpc(
+      selectedChildId,
+      actualPoints,
+      adjustReason.trim(),
+    );
+    setIsSubmitting(false);
+
+    if (error) {
+      toast.error('调整积分失败', { description: error.message });
+      return;
+    }
+
+    await loadChildData(selectedChildId);
+    setShowAdjustDialog(false);
+    setAdjustPoints('');
+    setAdjustReason('');
+  };
+
+  const openAdjustDialog = (type: 'add' | 'deduct') => {
+    setAdjustType(type);
+    setAdjustPoints('');
+    setAdjustReason('');
+    setShowAdjustDialog(true);
+  };
+
+  const openEditDialog = (adjustment: PointAdjustment) => {
+    setEditingAdjustment(adjustment);
+    setAdjustPoints(Math.abs(adjustment.points).toString());
+    setAdjustReason(adjustment.reason);
+    setAdjustType(adjustment.points > 0 ? 'add' : 'deduct');
+    setShowEditDialog(true);
+  };
+
+  const openDeleteDialog = (adjustment: PointAdjustment) => {
+    setDeletingAdjustment(adjustment);
+    setShowDeleteDialog(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editingAdjustment || !selectedChildId) return;
+    const points = parseInt(adjustPoints);
+    if (isNaN(points) || points <= 0) return;
+    if (!adjustReason.trim()) return;
+
+    const newPoints = adjustType === 'add' ? points : -points;
+    if (!canApplyEdit(childTotal, editingAdjustment.points, newPoints)) {
+      toast.error('编辑后孩子积分不能为负', {
+        description: `最多可扣 ${getMaxEditableDeduction(childTotal, editingAdjustment.points)} 分`,
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await updateChildPointAdjustmentRpc(
+      editingAdjustment.id,
+      newPoints,
+      adjustReason.trim(),
+    );
+    setIsSubmitting(false);
+
+    if (error) {
+      toast.error('保存修改失败', { description: error.message });
+      return;
+    }
+
+    await loadChildData(selectedChildId);
+    setShowEditDialog(false);
+    setEditingAdjustment(null);
+    setAdjustPoints('');
+    setAdjustReason('');
+  };
+
+  const handleDelete = async () => {
+    if (!deletingAdjustment || !selectedChildId) return;
+
+    setIsSubmitting(true);
+    const { error } = await deleteChildPointAdjustmentRpc(deletingAdjustment.id);
+    setIsSubmitting(false);
+
+    if (error) {
+      toast.error('删除失败', { description: error.message });
+      return;
+    }
+
+    await loadChildData(selectedChildId);
+    setShowDeleteDialog(false);
+    setDeletingAdjustment(null);
+  };
+
+  return (
+    <div className="min-h-screen bg-neutral-50">
+      {/* 头部 */}
+      <header className="bg-gradient-to-r from-accent-yellow-400 to-accent-orange-400 text-white p-6 rounded-b-surface shadow-card">
+        <div className="flex items-center justify-between mb-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/profile')} className="text-white hover:bg-white/20">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-title font-bold">积分管理</h1>
+          <div className="w-10" />
+        </div>
+        
+        {/* 总积分显示 */}
+        <div className="text-center py-4">
+          <p className="text-white/80 text-body mb-2">
+            {isParent ? `${selectedChild?.username || '孩子'} 当前积分` : '当前总积分'}
+          </p>
+          <div className="text-display font-bold flex items-center justify-center gap-3">
+            <Coins className="w-10 h-10" />
+            {isParent && isChildDataLoading ? '加载中…' : displayTotal}
+          </div>
+        </div>
+      </header>
+
+      <div className="p-4 pb-24 space-y-4">
+        {/* 孩子切换器（仅家长） */}
+        {isParent && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-card p-4 shadow-card border border-neutral-100"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-neutral-800 flex items-center gap-2">
+                <Users className="w-5 h-5 text-brand-500" />
+                调整对象
+              </h3>
+              {isChildDataLoading && <Loader2 className="w-4 h-4 text-neutral-400 animate-spin" />}
+            </div>
+
+            {isChildListLoading ? (
+              <p className="text-caption text-neutral-400 py-2">正在加载孩子列表…</p>
+            ) : childListError ? (
+              <div className="text-center py-3">
+                <p className="text-caption text-neutral-500 mb-2">孩子列表加载失败：{childListError}</p>
+                <Button variant="outline" size="sm" className="rounded-button" onClick={loadChildren}>
+                  重试
+                </Button>
+              </div>
+            ) : childList.length === 0 ? (
+              <div className="text-center py-3">
+                <p className="text-caption text-neutral-500 mb-2">尚未绑定孩子，请先到孩子管理中绑定</p>
                 <Button
                   size="sm"
                   className="rounded-button bg-brand-500 hover:bg-brand-400"
