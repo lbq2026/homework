@@ -1,5 +1,306 @@
-(some characters truncated)...
-se;
+/**
+ * Supabase 数据访问层（services）
+ *
+ * 职责：封装所有对 Supabase 表的读写、Realtime 订阅，以及「数据库行 ↔ 领域模型」的转换。
+ * 不依赖 React，可独立测试。
+ *
+ * 说明：原逻辑位于 useSyncedAppState.ts（1,700+ 行），本次拆分后该 hook 仅保留
+ * 状态编排与副作用，本文件提供类型化的数据访问（无 any）。
+ */
+import { supabase } from '@/lib/supabase';
+import type { Database } from '@/types/database';
+import type {
+  AppState,
+  Task,
+  Reward,
+  Redemption,
+  BadgeType,
+  DailyTask,
+  PrimaryCategory,
+  SecondaryCategory,
+  TertiaryCategory,
+  PointAdjustment,
+  CustomBadge,
+} from '@/types';
+import { loadState } from '@/utils/storage';
+import type { ChildRedemptionRow } from '@/utils/childOverview';
+
+// ============================================
+// 行类型（数据库）
+// ============================================
+type PrimaryCategoryRow = Database['public']['Tables']['primary_categories']['Row'];
+type SecondaryCategoryRow = Database['public']['Tables']['secondary_categories']['Row'];
+type TertiaryCategoryRow = Database['public']['Tables']['tertiary_categories']['Row'];
+type TaskRow = Database['public']['Tables']['tasks']['Row'];
+type DailyRecordRow = Database['public']['Tables']['daily_records']['Row'];
+type RewardRow = Database['public']['Tables']['rewards']['Row'];
+type RedemptionRow = Database['public']['Tables']['redemptions']['Row'];
+type BadgeRow = Database['public']['Tables']['badges']['Row'];
+type PointAdjustmentRow = Database['public']['Tables']['point_adjustments']['Row'];
+export type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type CustomBadgeRow = Database['public']['Tables']['custom_badges']['Row'];
+
+// ============================================
+// 行 → 领域模型 转换
+// ============================================
+export const toPrimaryCategory = (r: PrimaryCategoryRow): PrimaryCategory => ({
+  id: r.id,
+  name: r.name,
+  icon: r.icon || '📚',
+  key: r.key || 'category',
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toSecondaryCategory = (r: SecondaryCategoryRow): SecondaryCategory => ({
+  id: r.id,
+  name: r.name,
+  icon: r.icon || '📖',
+  primaryCategoryId: r.primary_category_id || '',
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toTertiaryCategory = (r: TertiaryCategoryRow): TertiaryCategory => ({
+  id: r.id,
+  name: r.name,
+  icon: r.icon || '📝',
+  defaultPoints: r.default_points || 1,
+  secondaryCategoryId: r.secondary_category_id || '',
+  repeat: r.repeat_rule as unknown as TertiaryCategory['repeat'] | undefined,
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toTask = (r: TaskRow): Task => ({
+  id: r.id,
+  name: r.name,
+  basePoints: r.base_points || 1,
+  icon: r.icon || '📚',
+  primaryCategoryId: r.primary_category_id || undefined,
+  secondaryCategoryId: r.secondary_category_id || undefined,
+  tertiaryCategoryId: r.tertiary_category_id || undefined,
+  isTemporary: r.is_temporary || false,
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toDailyRecord = (r: DailyRecordRow) => ({
+  date: r.date,
+  tasks: r.tasks || [],
+  totalPoints: r.total_points || 0,
+});
+
+export const toReward = (r: RewardRow): Reward => ({
+  id: r.id,
+  name: r.name,
+  points: r.points,
+  icon: r.icon || '🎁',
+  description: r.description || '',
+  category: (r.category as Reward['category']) || 'other',
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toRedemption = (r: RedemptionRow): Redemption => ({
+  id: r.id,
+  rewardId: r.reward_id,
+  rewardName: r.reward_name,
+  points: r.points,
+  redeemedAt: new Date(r.created_at).getTime(),
+  status: r.status || 'approved',
+});
+
+export const toPointAdjustment = (r: PointAdjustmentRow): PointAdjustment => ({
+  id: r.id,
+  points: r.points,
+  reason: r.reason,
+  adjustedAt: new Date(r.created_at).getTime(),
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+export const toCustomBadge = (r: CustomBadgeRow): CustomBadge => ({
+  id: r.id,
+  name: r.name,
+  icon: r.icon || '🏅',
+  description: r.description || '',
+  conditionType: r.condition_type,
+  conditionValue: r.condition_value,
+  createdAt: new Date(r.created_at).getTime(),
+});
+
+// ============================================
+// 查询：并行拉取用户全量数据
+// ============================================
+export interface UserDataResult {
+  primaryCategories: PrimaryCategoryRow[];
+  secondaryCategories: SecondaryCategoryRow[];
+  tertiaryCategories: TertiaryCategoryRow[];
+  tasks: TaskRow[];
+  dailyRecords: DailyRecordRow[];
+  rewards: RewardRow[];
+  redemptions: RedemptionRow[];
+  badges: BadgeRow[];
+  pointAdjustments: PointAdjustmentRow[];
+  customBadges: CustomBadgeRow[];
+  profile: ProfileRow | null;
+}
+
+export const fetchAllUserData = async (userId: string): Promise<UserDataResult> => {
+  const [
+    { data: primaryCategoriesData },
+    { data: secondaryCategoriesData },
+    { data: tertiaryCategoriesData },
+    { data: tasksData },
+    { data: dailyRecordsData },
+    { data: rewardsData },
+    { data: redemptionsData },
+    { data: badgesData },
+    { data: pointAdjustmentsData },
+    { data: customBadgesData },
+    { data: profileData },
+  ] = await Promise.all([
+    supabase.from('primary_categories').select('*').eq('user_id', userId),
+    supabase.from('secondary_categories').select('*').eq('user_id', userId),
+    supabase.from('tertiary_categories').select('*').eq('user_id', userId),
+    supabase.from('tasks').select('*').eq('user_id', userId),
+    supabase.from('daily_records').select('*').eq('user_id', userId),
+    supabase.from('rewards').select('*').eq('user_id', userId),
+    supabase.from('redemptions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    supabase.from('badges').select('*').eq('user_id', userId),
+    supabase.from('point_adjustments').select('*').eq('user_id', userId),
+    supabase.from('custom_badges').select('*').eq('user_id', userId),
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+  ]);
+
+  return {
+    primaryCategories: primaryCategoriesData ?? [],
+    secondaryCategories: secondaryCategoriesData ?? [],
+    tertiaryCategories: tertiaryCategoriesData ?? [],
+    tasks: tasksData ?? [],
+    dailyRecords: dailyRecordsData ?? [],
+    rewards: rewardsData ?? [],
+    redemptions: redemptionsData ?? [],
+    badges: badgesData ?? [],
+    pointAdjustments: pointAdjustmentsData ?? [],
+    customBadges: customBadgesData ?? [],
+    profile: profileData ?? null,
+  };
+};
+
+/** 是否存在任何独立表数据（用于判断走独立表加载还是备份表加载） */
+export const hasIndependentData = (data: UserDataResult): boolean => {
+  return (
+    data.primaryCategories.length > 0 ||
+    data.secondaryCategories.length > 0 ||
+    data.tertiaryCategories.length > 0 ||
+    data.tasks.length > 0 ||
+    data.dailyRecords.length > 0 ||
+    data.rewards.length > 0 ||
+    data.redemptions.length > 0 ||
+    data.pointAdjustments.length > 0
+  );
+};
+
+// ============================================
+// 多孩子档案（P1-4）
+// ============================================
+
+/** 查询家长名下的孩子档案；保留错误信息，供积分管理页区分空态与加载失败 */
+export const fetchChildrenResult = async (
+  parentId: string,
+): Promise<{ data: ProfileRow[]; error: Error | null }> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('parent_id', parentId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('fetchChildren error:', error);
+    return { data: [], error: new Error(error.message) };
+  }
+  return { data: data ?? [], error: null };
+};
+
+/** 查询家长名下的孩子档案（profiles.parent_id = parentId） */
+export const fetchChildren = async (parentId: string): Promise<ProfileRow[]> => {
+  const { data } = await fetchChildrenResult(parentId);
+  return data;
+};
+
+/** 建立亲子关联：将孩子 profile.parent_id 设为家长 id */
+export const linkChildToParent = async (childId: string, parentId: string) => {
+  return supabase.from('profiles').update({ parent_id: parentId }).eq('id', childId);
+};
+
+/** 家长读取孩子数据（只读数据面板，依赖 RLS 放行） */
+export const fetchChildData = async (childId: string): Promise<UserDataResult | null> => {
+  const [
+    { data: primaryCategoriesData },
+    { data: secondaryCategoriesData },
+    { data: tertiaryCategoriesData },
+    { data: tasksData },
+    { data: dailyRecordsData },
+    { data: rewardsData },
+    { data: redemptionsData },
+    { data: badgesData },
+    { data: pointAdjustmentsData },
+    { data: customBadgesData },
+    { data: profileData },
+  ] = await Promise.all([
+    supabase.from('primary_categories').select('*').eq('user_id', childId),
+    supabase.from('secondary_categories').select('*').eq('user_id', childId),
+    supabase.from('tertiary_categories').select('*').eq('user_id', childId),
+    supabase.from('tasks').select('*').eq('user_id', childId),
+    supabase.from('daily_records').select('*').eq('user_id', childId),
+    supabase.from('rewards').select('*').eq('user_id', childId),
+    supabase.from('redemptions').select('*').eq('user_id', childId).order('created_at', { ascending: false }),
+    supabase.from('badges').select('*').eq('user_id', childId),
+    supabase.from('point_adjustments').select('*').eq('user_id', childId),
+    supabase.from('custom_badges').select('*').eq('user_id', childId),
+    supabase.from('profiles').select('*').eq('id', childId).single(),
+  ]);
+
+  return {
+    primaryCategories: primaryCategoriesData ?? [],
+    secondaryCategories: secondaryCategoriesData ?? [],
+    tertiaryCategories: tertiaryCategoriesData ?? [],
+    tasks: tasksData ?? [],
+    dailyRecords: dailyRecordsData ?? [],
+    rewards: rewardsData ?? [],
+    redemptions: redemptionsData ?? [],
+    badges: badgesData ?? [],
+    pointAdjustments: pointAdjustmentsData ?? [],
+    customBadges: customBadgesData ?? [],
+    profile: profileData ?? null,
+  };
+};
+
+/** 由数据库数据构建完整 AppState（合并本地空状态，徽章保留默认定义并合并解锁时间） */
+export const buildStateFromDb = (data: UserDataResult): AppState => {
+  const base = loadState();
+
+  const state: AppState = {
+    ...base,
+    primaryCategories: data.primaryCategories.map(toPrimaryCategory),
+    secondaryCategories: data.secondaryCategories.map(toSecondaryCategory),
+    tertiaryCategories: data.tertiaryCategories.map(toTertiaryCategory),
+    tasks: data.tasks.map(toTask),
+    dailyRecords: data.dailyRecords.map(toDailyRecord),
+    rewards: data.rewards.map(toReward),
+    redemptions: data.redemptions.map(toRedemption),
+    pointAdjustments: data.pointAdjustments.map(toPointAdjustment),
+  };
+
+  // 徽章：默认定义 + 数据库解锁时间
+  if (data.badges.length > 0) {
+    state.badges = base.badges.map(b => {
+      const unlocked = data.badges.find(ub => ub.badge_type === b.id);
+      return unlocked ? { ...b, unlockedAt: new Date(unlocked.unlocked_at).getTime() } : b;
+    });
+  }
+
+  // 自定义徽章（P2-2）：数据库定义 + 解锁时间（badges 表 badge_type = `custom:${id}`）
+  if (data.customBadges.length > 0) {
+    state.customBadges = data.customBadges.map(cb => {
+      const base = toCustomBadge(cb);
+      const unlocked = data.badges.find(ub => ub.badge_type === `custom:${cb.id}`);
+      return unlocked ? { ...base, unlockedAt: new Date(unlocked.unlocked_at).getTime() } : base;
     });
   }
 
