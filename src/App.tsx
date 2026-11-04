@@ -111,7 +111,7 @@ function AppContent() {
 
   // 如果未登录，显示登录页面
   if (!user && isConfigured && !isResetPage) {
-    return <Auth onLoginSuccess={() => window.location.replace('/')} />;
+    return <Auth onLoginSuccess={(loginRole) => window.location.replace(loginRole === 'parent' ? '/parent' : '/')} />;
   }
 
   return (
